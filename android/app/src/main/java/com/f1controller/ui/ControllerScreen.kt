@@ -1,5 +1,6 @@
 package com.f1controller.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -15,38 +16,97 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.f1controller.network.UdpTransport
 import kotlinx.coroutines.delay
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
 
 /**
- * Controller Screen (Phase 1 + 2)
+ * Controller Screen — full-screen landscape driving layout.
  *
- * Landscape layout:
- * - Top bar: Status, RTT, steering angle visualization
- * - Left side: Brake pedal (vertical slider, 0-255)
- * - Right side: Throttle pedal (vertical slider, 0-255)
- * - Bottom center: F1 racing buttons
+ *   [GEAR ↓][ERS]      [BACK][START]      [DRS][GEAR ↑]
+ *   [BRAKE] [D-pad]    steering wheel     [YXBA][THROTTLE]
  *
  * Xbox controller button bits (XUSB_BUTTON flags):
- *   0x0001 = DPAD_UP       0x0100 = LEFT_SHOULDER
- *   0x0002 = DPAD_DOWN     0x0200 = RIGHT_SHOULDER
+ *   0x0001 = DPAD_UP       0x0100 = LEFT_SHOULDER   (gear down)
+ *   0x0002 = DPAD_DOWN     0x0200 = RIGHT_SHOULDER  (gear up)
  *   0x0004 = DPAD_LEFT     0x0010 = START
  *   0x0008 = DPAD_RIGHT    0x0020 = BACK
- *   0x0040 = LEFT_THUMB    0x0080 = RIGHT_THUMB
+ *   0x0040 = LEFT_THUMB    (ERS)
+ *   0x0080 = RIGHT_THUMB   (DRS)
  *   0x1000 = A             0x2000 = B
  *   0x4000 = X             0x8000 = Y
  */
+
+private object Palette {
+    val BgCenter = Color(0xFF10232B)
+    val BgEdge = Color(0xFF090F14)
+    val Panel = Color(0xFF111B24)
+    val PanelBorder = Color(0xFF243441)
+    val Text = Color(0xFFE6EDF2)
+    val TextDim = Color(0xFF8A99A6)
+    val Cyan = Color(0xFF22D3EE)
+    val Red = Color(0xFFF26B6B)
+    val Green = Color(0xFF3DDC84)
+    val Yellow = Color(0xFFF2C94C)
+    val Blue = Color(0xFF5B7BF0)
+}
+
+private val Condensed = FontFamily(
+    android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.BOLD)
+)
+
+private const val BTN_DPAD_UP = 0x0001
+private const val BTN_DPAD_DOWN = 0x0002
+private const val BTN_DPAD_LEFT = 0x0004
+private const val BTN_DPAD_RIGHT = 0x0008
+private const val BTN_START = 0x0010
+private const val BTN_BACK = 0x0020
+private const val BTN_ERS = 0x0040     // LEFT_THUMB
+private const val BTN_DRS = 0x0080     // RIGHT_THUMB
+private const val BTN_GEAR_DOWN = 0x0100
+private const val BTN_GEAR_UP = 0x0200
+private const val BTN_A = 0x1000
+private const val BTN_B = 0x2000
+private const val BTN_X = 0x4000
+private const val BTN_Y = 0x8000
+
+/** Pedal height as a fraction of the main row; they stay pinned to the bottom. */
+private const val PEDAL_HEIGHT = 0.72f
+
 @Composable
 fun ControllerScreen(
     transport: UdpTransport,
     onSteeringAngleDisplay: () -> Float,
+    lockAngleDeg: () -> Float,
+    pedalSettings: PedalSettings,
+    onOpenSettings: () -> Unit,
 ) {
     val tState by transport.state.collectAsState()
 
@@ -78,208 +138,285 @@ fun ControllerScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(8.dp)
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // ---- Top Status Bar ----
-            StatusBar(tState, angle)
+    val gap = 12.dp
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // ---- Main Control Area ----
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Left Pedal: Brake
-                VerticalPedal(
-                    label = "BRAKE",
-                    value = brakeVal,
-                    onValueChanged = {
-                        brakeVal = it
-                        transport.brake = (it * 255f).toInt()
-                    },
-                    color = Color(0xFFE10600)
-                )
-
-                // Center: Steering vis + Buttons
-                CenterPanel(
-                    angle = angle,
-                    buttonMask = buttonMask,
-                    onButton = onButton,
-                )
-
-                // Right Pedal: Throttle
-                VerticalPedal(
-                    label = "THROTTLE",
-                    value = throttleVal,
-                    onValueChanged = {
-                        throttleVal = it
-                        transport.throttle = (it * 255f).toInt()
-                    },
-                    color = Color(0xFF00D95F)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatusBar(
-    tState: UdpTransport.TransportState,
-    angle: Float,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(40.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(if (tState.isConnected) Color(0xFF00D95F) else Color(0xFFE10600))
-            )
-            Text(
-                text = if (tState.isConnected) "Connected" else "Disconnected",
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(
-                text = "RTT: ${tState.rttAvgMs.toInt()}ms (p99: ${tState.rttP99Ms.toInt()}ms)",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp
-            )
-            Text(
-                text = "TX: ${tState.sendRateHz.toInt()} Hz",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp
-            )
-
-            Text(
-                text = "Steer: ${angle.toInt()}°",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
-private fun RowScope.CenterPanel(
-    angle: Float,
-    buttonMask: Int,
-    onButton: (bit: Int, pressed: Boolean) -> Unit,
-) {
     Column(
         modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight()
-            .padding(horizontal = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceEvenly
+            .fillMaxSize()
+            .background(Brush.radialGradient(listOf(Palette.BgCenter, Palette.BgEdge)))
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(gap)
     ) {
-        // Steering Angle Visualizer Circle
-        Box(
-            modifier = Modifier
-                .size(92.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surface)
-                .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
-            contentAlignment = Alignment.Center
+        // ---- Top row ----
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(0.27f),
+            horizontalArrangement = Arrangement.spacedBy(gap)
         ) {
+            Row(Modifier.weight(0.34f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                GearButton(up = false, BTN_GEAR_DOWN, buttonMask, onButton, Modifier.weight(1.35f))
+                PanelButton(BTN_ERS, buttonMask, onButton, Modifier.weight(1f).fillMaxHeight()) { pressed ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("ERS", fontFamily = Condensed, fontSize = 30.sp,
+                            color = if (pressed) Palette.Yellow else Palette.Text)
+                        Text("DEPLOY", fontFamily = Condensed, fontSize = 11.sp,
+                            letterSpacing = 2.sp, color = Palette.TextDim)
+                    }
+                }
+            }
+            Row(
+                Modifier.weight(0.32f).fillMaxHeight(),
+                horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.Top
+            ) {
+                PillButton("BACK", BTN_BACK, buttonMask, onButton, Palette.Text)
+                PillButton("START", BTN_START, buttonMask, onButton, Palette.Cyan)
+            }
+            Row(Modifier.weight(0.34f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                DrsButton(buttonMask, onButton, Modifier.weight(1f).fillMaxHeight())
+                GearButton(up = true, BTN_GEAR_UP, buttonMask, onButton, Modifier.weight(1.35f))
+            }
+        }
 
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    Icons.Default.Refresh,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+        // ---- Main row ----
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(0.73f),
+            horizontalArrangement = Arrangement.spacedBy(gap),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            VerticalPedal(
+                label = "BRAKE",
+                value = brakeVal,
+                onValueChanged = {
+                    brakeVal = it
+                    transport.brake = (it * 255f).toInt()
+                },
+                color = Palette.Red,
+                asButton = pedalSettings.brakeAsButton,
+                modifier = Modifier.weight(0.17f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
+            )
+            Box(Modifier.weight(0.17f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                DPad(buttonMask, onButton)
+            }
+            Column(
+                Modifier.weight(0.28f).fillMaxHeight(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                SteeringWheel(
+                    angle = angle,
+                    lockAngleDeg = lockAngleDeg(),
+                    revLevel = throttleVal,
+                    modifier = Modifier.fillMaxWidth().weight(1f)
                 )
                 Text(
                     text = "${angle.toInt()}°",
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 16.sp,
+                    color = Palette.TextDim
                 )
-                Text(
-                    text = "GYRO STEER",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 9.sp
-                )
+                Spacer(Modifier.height(8.dp))
+                StatusPills(tState, lockAngleDeg(), onOpenSettings)
+            }
+            Box(Modifier.weight(0.21f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                FaceButtons(buttonMask, onButton)
+            }
+            VerticalPedal(
+                label = "THROTTLE",
+                value = throttleVal,
+                onValueChanged = {
+                    throttleVal = it
+                    transport.throttle = (it * 255f).toInt()
+                },
+                color = Palette.Cyan,
+                asButton = pedalSettings.throttleAsButton,
+                modifier = Modifier.weight(0.17f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
+            )
+        }
+    }
+}
+
+// ---- Buttons ----
+
+/**
+ * Press-and-hold mapped to an Xbox button bit: down sets it, up/cancel clears it.
+ * Keyed on `bit` only: keying on the mask restarted this handler mid-press,
+ * so the release was never seen and buttons stuck down.
+ */
+@Composable
+private fun Modifier.holdButton(bit: Int, onButton: (bit: Int, pressed: Boolean) -> Unit): Modifier {
+    val haptic = LocalHapticFeedback.current
+    val currentOnButton by rememberUpdatedState(onButton)
+    return pointerInput(bit) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false)
+            currentOnButton(bit, true)
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            try {
+                waitForUpOrCancellation()
+            } finally {
+                currentOnButton(bit, false)
             }
         }
+    }
+}
 
+/** Rounded dark panel that lights up with [accent] while held. */
+@Composable
+private fun PanelButton(
+    bit: Int,
+    mask: Int,
+    onButton: (bit: Int, pressed: Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    accent: Color = Palette.Cyan,
+    shape: RoundedCornerShape = RoundedCornerShape(18.dp),
+    idleBorder: Color = Palette.PanelBorder,
+    idleFill: Color = Palette.Panel,
+    content: @Composable BoxScope.(pressed: Boolean) -> Unit,
+) {
+    val pressed = (mask and bit) != 0
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(if (pressed) accent.copy(alpha = 0.22f) else idleFill)
+            .border(if (pressed) 2.dp else 1.dp, if (pressed) accent else idleBorder, shape)
+            .holdButton(bit, onButton),
+        contentAlignment = Alignment.Center
+    ) {
+        content(pressed)
+    }
+}
+
+@Composable
+private fun GearButton(
+    up: Boolean,
+    bit: Int,
+    mask: Int,
+    onButton: (bit: Int, pressed: Boolean) -> Unit,
+    modifier: Modifier,
+) {
+    PanelButton(bit, mask, onButton, modifier.fillMaxHeight(), shape = RoundedCornerShape(22.dp)) { pressed ->
+        val chevron = if (up) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown
         Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(20.dp)
+            horizontalArrangement = if (up) Arrangement.End else Arrangement.Start
         ) {
-        DPad(buttonMask, onButton)
+            if (up) {
+                Icon(chevron, null, tint = Palette.Cyan, modifier = Modifier.size(30.dp))
+                Spacer(Modifier.weight(1f))
+            }
+            Column(horizontalAlignment = if (up) Alignment.End else Alignment.Start) {
+                Text("GEAR", fontFamily = Condensed, fontSize = 12.sp, letterSpacing = 3.sp,
+                    color = Palette.TextDim)
+                Text(if (up) "UP" else "DOWN", fontFamily = Condensed, fontSize = 34.sp,
+                    color = if (pressed) Palette.Cyan else Palette.Text)
+            }
+            if (!up) {
+                Icon(chevron, null, tint = Palette.Cyan, modifier = Modifier.size(30.dp))
+                Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
 
-        // Button Grid
-        Column(
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Row 1: Gear buttons + DRS/ERS
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                F1Button("GEAR ↓", 0x0100, buttonMask, onButton)  // LEFT_SHOULDER
-                F1Button("GEAR ↑", 0x0200, buttonMask, onButton)  // RIGHT_SHOULDER
-                F1Button("DRS",    0x4000, buttonMask, onButton)  // X
-                F1Button("ERS",    0x8000, buttonMask, onButton)  // Y
-            }
-            // Row 2: A / B / Start / Back
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                F1Button("A",      0x1000, buttonMask, onButton)  // A
-                F1Button("B",      0x2000, buttonMask, onButton)  // B
-                F1Button("MENU",   0x0010, buttonMask, onButton)  // START
-                F1Button("MFD",    0x0020, buttonMask, onButton)  // BACK
+@Composable
+private fun DrsButton(
+    mask: Int,
+    onButton: (bit: Int, pressed: Boolean) -> Unit,
+    modifier: Modifier,
+) {
+    PanelButton(
+        BTN_DRS, mask, onButton, modifier,
+        accent = Palette.Green,
+        shape = RoundedCornerShape(22.dp),
+        idleBorder = Palette.Green.copy(alpha = 0.6f),
+        idleFill = Palette.Green.copy(alpha = 0.08f),
+    ) { pressed ->
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("DRS", fontFamily = Condensed, fontSize = 38.sp, color = Palette.Green)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(Palette.Green))
+                Spacer(Modifier.width(6.dp))
+                Text(if (pressed) "OPEN" else "READY", fontFamily = Condensed, fontSize = 12.sp,
+                    letterSpacing = 2.sp, color = Palette.Green)
             }
         }
-        }
+    }
+}
+
+@Composable
+private fun PillButton(
+    label: String,
+    bit: Int,
+    mask: Int,
+    onButton: (bit: Int, pressed: Boolean) -> Unit,
+    color: Color,
+) {
+    PanelButton(
+        bit, mask, onButton,
+        Modifier.height(48.dp).widthIn(min = 80.dp),
+        shape = RoundedCornerShape(24.dp),
+    ) { pressed ->
+        Text(label, fontFamily = Condensed, fontSize = 16.sp, letterSpacing = 3.sp,
+            color = if (pressed) Palette.Cyan else color,
+            modifier = Modifier.padding(horizontal = 20.dp))
     }
 }
 
 /** Cross-shaped D-pad for menu navigation (XUSB_GAMEPAD_DPAD_* bits). */
 @Composable
 private fun DPad(
-    buttonMask: Int,
+    mask: Int,
     onButton: (bit: Int, pressed: Boolean) -> Unit,
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        F1Button("▲", 0x0001, buttonMask, onButton, square = true)        // DPAD_UP
-        Row(horizontalArrangement = Arrangement.spacedBy(42.dp)) {
-            F1Button("◀", 0x0004, buttonMask, onButton, square = true)    // DPAD_LEFT
-            F1Button("▶", 0x0008, buttonMask, onButton, square = true)    // DPAD_RIGHT
+    BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f, matchHeightConstraintsFirst = true)) {
+        val key = min(maxWidth.value, maxHeight.value).dp / 3.0f
+        @Composable
+        fun Key(bit: Int, icon: ImageVector, align: Alignment) {
+            PanelButton(bit, mask, onButton, Modifier.size(key).align(align),
+                shape = RoundedCornerShape(14.dp)) { pressed ->
+                Icon(icon, null, tint = if (pressed) Palette.Cyan else Palette.Text,
+                    modifier = Modifier.size(key * 0.45f))
+            }
         }
-        F1Button("▼", 0x0002, buttonMask, onButton, square = true)        // DPAD_DOWN
+        Key(BTN_DPAD_UP, Icons.Default.KeyboardArrowUp, Alignment.TopCenter)
+        Key(BTN_DPAD_LEFT, Icons.Default.KeyboardArrowLeft, Alignment.CenterStart)
+        Key(BTN_DPAD_RIGHT, Icons.Default.KeyboardArrowRight, Alignment.CenterEnd)
+        Key(BTN_DPAD_DOWN, Icons.Default.KeyboardArrowDown, Alignment.BottomCenter)
     }
 }
 
+/** Xbox-style diamond: Y top, X left, B right, A bottom. */
+@Composable
+private fun FaceButtons(
+    mask: Int,
+    onButton: (bit: Int, pressed: Boolean) -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f, matchHeightConstraintsFirst = true)) {
+        val d = min(maxWidth.value, maxHeight.value).dp / 2.6f
+        @Composable
+        fun Face(label: String, bit: Int, color: Color, align: Alignment) {
+            PanelButton(
+                bit, mask, onButton, Modifier.size(d).align(align),
+                accent = color,
+                shape = CircleShape,
+                idleBorder = color,
+                idleFill = color.copy(alpha = 0.10f),
+            ) {
+                Text(label, fontFamily = Condensed, fontSize = (d.value * 0.42f).sp, color = color)
+            }
+        }
+        Face("Y", BTN_Y, Palette.Yellow, Alignment.TopCenter)
+        Face("X", BTN_X, Palette.Blue, Alignment.CenterStart)
+        Face("B", BTN_B, Palette.Red, Alignment.CenterEnd)
+        Face("A", BTN_A, Palette.Green, Alignment.BottomCenter)
+    }
+}
+
+// ---- Pedals ----
+
 /**
- * Vertical pedal control — drag up from bottom to apply pressure, release to return to zero.
+ * Vertical pedal control: press anywhere and drag; height = pressure. Release returns to zero.
+ * With [asButton], any press is full pressure regardless of position.
  * Value: 0f (released) to 1f (fully pressed).
  */
 @Composable
@@ -287,23 +424,34 @@ fun VerticalPedal(
     label: String,
     value: Float,
     onValueChanged: (Float) -> Unit,
-    color: Color
+    color: Color,
+    asButton: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val currentOnValueChanged by rememberUpdatedState(onValueChanged)
+    val shape = RoundedCornerShape(26.dp)
+    val v = value.coerceIn(0f, 1f)
 
     Box(
-        modifier = Modifier
-            .width(80.dp)
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-            .pointerInput(Unit) {
+        modifier = modifier
+            .clip(shape)
+            .background(Palette.Panel)
+            .border(1.dp, Palette.PanelBorder, shape)
+            .drawBehind {
+                // Faint horizontal grooves
+                val step = 14.dp.toPx()
+                var y = step
+                while (y < size.height) {
+                    drawLine(Color.White.copy(alpha = 0.04f), Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+                    y += step
+                }
+            }
+            .pointerInput(asButton) {
                 // Raw down/move/up rather than detectDragGestures: a drag only
                 // starts after touch slop, so a plain press wouldn't register.
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    fun toValue(y: Float) = 1f - (y / size.height).coerceIn(0f, 1f)
+                    fun toValue(y: Float) = if (asButton) 1f else 1f - (y / size.height).coerceIn(0f, 1f)
                     currentOnValueChanged(toValue(down.position.y))
                     while (true) {
                         val event = awaitPointerEvent()
@@ -317,94 +465,186 @@ fun VerticalPedal(
             },
         contentAlignment = Alignment.BottomCenter
     ) {
-        // Background fill bar
+        // Fill with a bright edge at the current pressure
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(value.coerceIn(0f, 1f))
-                .background(color.copy(alpha = 0.35f))
+                .fillMaxHeight(v)
+                .background(Brush.verticalGradient(listOf(color.copy(alpha = 0.12f), color.copy(alpha = 0.55f))))
+                .drawBehind {
+                    if (v > 0f) drawRect(color, size = Size(size.width, 3.dp.toPx()))
+                }
         )
-        // Labels
+        // Dashed thumb target near the bottom
+        Canvas(Modifier.fillMaxWidth(0.62f).aspectRatio(1f).padding(bottom = 16.dp)) {
+            drawCircle(
+                color = Color.White.copy(alpha = 0.25f),
+                style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f)))
+            )
+        }
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(8.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxSize().padding(top = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Text(label, fontFamily = Condensed, fontSize = 13.sp, letterSpacing = 3.sp, color = Palette.Text)
+            Spacer(Modifier.height(6.dp))
             Text(
-                text = label,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "${(value * 100).toInt()}%",
-                color = color,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Icon(
-                Icons.Default.SwapVert,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
+                buildAnnotatedString {
+                    append("${(v * 100).toInt()}")
+                    withStyle(SpanStyle(fontSize = 14.sp)) { append("%") }
+                },
+                fontFamily = Condensed, fontSize = 30.sp, color = color
             )
         }
     }
 }
 
+// ---- Center ----
+
 /**
- * Momentary push-button mapped to an Xbox controller button bit.
- * Press and hold to activate; release to deactivate.
+ * Wheel graphic rotated by the gyro angle, under a tick arc with a marker
+ * at the current position within the lock. Rev LEDs follow the throttle
+ * (there's no telemetry coming back from the PC yet).
  */
 @Composable
-fun F1Button(
-    label: String,
-    bit: Int,
-    currentMask: Int,
-    onButton: (bit: Int, pressed: Boolean) -> Unit,
-    square: Boolean = false,
+private fun SteeringWheel(
+    angle: Float,
+    lockAngleDeg: Float,
+    revLevel: Float,
+    modifier: Modifier = Modifier,
 ) {
-    val isPressed = (currentMask and bit) != 0
-    val haptic = LocalHapticFeedback.current
-    val currentOnButton by rememberUpdatedState(onButton)
-
-    Surface(
-        modifier = Modifier
-            .then(if (square) Modifier.size(40.dp) else Modifier.height(40.dp))
-            // Keyed on `bit` only: keying on the mask restarted this handler
-            // mid-press, so the release was never seen and buttons stuck down.
-            .pointerInput(bit) {
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    currentOnButton(bit, true)
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    try {
-                        waitForUpOrCancellation()
-                    } finally {
-                        currentOnButton(bit, false)
-                    }
-                }
-            },
-        color = if (isPressed)
-            MaterialTheme.colorScheme.primary
-        else
-            MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(8.dp),
-        tonalElevation = if (isPressed) 0.dp else 2.dp,
-    ) {
-        Box(
-            modifier = if (square) Modifier.fillMaxSize()
-                       else Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            contentAlignment = Alignment.Center
+    Box(modifier, contentAlignment = Alignment.Center) {
+        val arcSpan = 70f
+        Canvas(Modifier.fillMaxSize()) {
+            val r = min(size.width * 0.46f, size.height * 0.62f)
+            val c = Offset(size.width / 2, size.height * 0.62f)
+            val marker = (angle / lockAngleDeg.coerceAtLeast(1f)).coerceIn(-1f, 1f) * arcSpan
+            for (i in -14..14) {
+                val a = i * 5f
+                val major = i % 7 == 0
+                val lit = (a <= 0 && a >= marker) || (a >= 0 && a <= marker)
+                val len = if (i == 0) 18.dp.toPx() else if (major) 9.dp.toPx() else 5.dp.toPx()
+                tick(c, r, a, len, if (i == 0) Palette.Text else if (lit) Palette.Cyan else Palette.TextDim.copy(alpha = 0.45f),
+                    if (i == 0) 2.5.dp.toPx() else 1.5.dp.toPx())
+            }
+            // Marker triangle pointing at the arc
+            rotate(marker, c) {
+                val tip = Offset(c.x, c.y - r + 2.dp.toPx())
+                val w = 7.dp.toPx()
+                val h = 14.dp.toPx()
+                drawPath(Path().apply {
+                    moveTo(tip.x, tip.y)
+                    lineTo(tip.x - w, tip.y - h)
+                    lineTo(tip.x + w, tip.y - h)
+                    close()
+                }, Palette.Cyan)
+            }
+        }
+        BoxWithConstraints(
+            Modifier
+                .fillMaxWidth(0.62f)
+                .aspectRatio(2.0f)
+                .offset(y = 18.dp)
+                .graphicsLayer { rotationZ = angle }
         ) {
-            Text(
-                text = label,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isPressed) Color.White else MaterialTheme.colorScheme.onSurface
-            )
+            val textSize: TextUnit = (maxHeight.value * 0.22f).sp
+            Canvas(Modifier.fillMaxSize()) { drawWheel(revLevel) }
+            Text("–", fontFamily = FontFamily.Monospace, fontSize = textSize, color = Palette.Cyan,
+                modifier = Modifier.align(Alignment.Center))
         }
     }
+}
+
+private fun DrawScope.tick(c: Offset, r: Float, deg: Float, len: Float, color: Color, width: Float) {
+    val rad = Math.toRadians((deg - 90f).toDouble())
+    val dir = Offset(cos(rad).toFloat(), sin(rad).toFloat())
+    drawLine(color, c + dir * (r - len), c + dir * r, width)
+}
+
+private fun DrawScope.drawWheel(revLevel: Float) {
+    val w = size.width
+    val h = size.height
+    val stroke = Stroke(1.5.dp.toPx())
+    val gripFill = Color(0xFF0D161D)
+    val bodyFill = Color(0xFF152029)
+
+    // Grips
+    val gripW = w * 0.2f
+    val gripH = h * 0.95f
+    for (x in listOf(0f, w - gripW)) {
+        val tl = Offset(x, (h - gripH) / 2)
+        val sz = Size(gripW, gripH)
+        drawRoundRect(gripFill, tl, sz, CornerRadius(gripW / 2))
+        drawRoundRect(Palette.PanelBorder, tl, sz, CornerRadius(gripW / 2), style = stroke)
+    }
+    // Body
+    val bodyTl = Offset(w * 0.14f, h * 0.18f)
+    val bodySz = Size(w * 0.72f, h * 0.64f)
+    drawRoundRect(bodyFill, bodyTl, bodySz, CornerRadius(h * 0.18f))
+    drawRoundRect(Palette.PanelBorder, bodyTl, bodySz, CornerRadius(h * 0.18f), style = stroke)
+    // Display
+    val dispTl = Offset(w * 0.34f, h * 0.36f)
+    val dispSz = Size(w * 0.32f, h * 0.3f)
+    drawRoundRect(Color(0xFF05090D), dispTl, dispSz, CornerRadius(h * 0.06f))
+    drawRoundRect(Palette.Cyan.copy(alpha = 0.3f), dispTl, dispSz, CornerRadius(h * 0.06f), style = stroke)
+    // Rev LEDs: 3 green, 3 red, 2 blue
+    val leds = listOf(Palette.Green, Palette.Green, Palette.Green, Palette.Red, Palette.Red, Palette.Red, Palette.Blue, Palette.Blue)
+    val lit = (revLevel * leds.size).toInt()
+    val ledR = h * 0.035f
+    val spacing = w * 0.045f
+    val startX = w / 2 - spacing * (leds.size - 1) / 2
+    leds.forEachIndexed { i, col ->
+        drawCircle(if (i < lit) col else col.copy(alpha = 0.25f), ledR, Offset(startX + i * spacing, h * 0.27f))
+    }
+    // Rotary dots
+    val dotR = h * 0.045f
+    drawCircle(Palette.Yellow, dotR, Offset(w * 0.24f, h * 0.7f))
+    drawCircle(Palette.Cyan, dotR, Offset(w * 0.3f, h * 0.7f))
+    drawCircle(Palette.Red, dotR, Offset(w * 0.7f, h * 0.62f))
+    drawCircle(Palette.Green, dotR, Offset(w * 0.76f, h * 0.58f))
+}
+
+@Composable
+private fun StatusPills(
+    tState: UdpTransport.TransportState,
+    lockAngleDeg: Float,
+    onOpenSettings: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Pill {
+            Box(Modifier.size(8.dp).clip(CircleShape)
+                .background(if (tState.isConnected) Palette.Green else Palette.Red))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (tState.isConnected) "WIFI ${tState.rttAvgMs.toInt()} ms" else "OFFLINE",
+                fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Palette.Text
+            )
+        }
+        Pill {
+            Text("LOCK ${(lockAngleDeg * 2).toInt()}°", fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp, color = Palette.Text)
+        }
+        IconButton(onClick = onOpenSettings, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Palette.TextDim,
+                modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun Pill(content: @Composable RowScope.() -> Unit) {
+    val shape = RoundedCornerShape(20.dp)
+    Row(
+        modifier = Modifier
+            .height(32.dp)
+            .clip(shape)
+            .background(Palette.Panel)
+            .border(1.dp, Palette.PanelBorder, shape)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content
+    )
 }

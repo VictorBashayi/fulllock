@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private lateinit var sensorLogger: SensorLogger
     private val transport = UdpTransport()
     private val steeringProcessor = SteeringProcessor()
+    private val pedalSettings = PedalSettings()
 
     // Sensor callbacks run here instead of the UI thread, so Compose frames
     // can't delay steering updates.
@@ -109,6 +110,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     sensorLogger = sensorLogger,
                     transport = transport,
                     steeringProcessor = steeringProcessor,
+                    pedalSettings = pedalSettings,
                 )
             }
         }
@@ -151,6 +153,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         transport.serverPort = prefs.getInt("server_port", transport.serverPort)
         transport.autoConnect = prefs.getBoolean("auto_connect", transport.autoConnect)
         steeringProcessor.curve = prefs.getFloat("curve", steeringProcessor.curve)
+        pedalSettings.brakeAsButton = prefs.getBoolean("brake_as_button", pedalSettings.brakeAsButton)
+        pedalSettings.throttleAsButton = prefs.getBoolean("throttle_as_button", pedalSettings.throttleAsButton)
         steeringProcessor.madgwick.beta = prefs.getFloat("beta", steeringProcessor.madgwick.beta)
         steeringProcessor.lockAngleDeg = prefs.getFloat("lock_angle", steeringProcessor.lockAngleDeg)
         steeringProcessor.deadzoneDeg = prefs.getFloat("deadzone", steeringProcessor.deadzoneDeg)
@@ -167,6 +171,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             .putInt("server_port", transport.serverPort)
             .putBoolean("auto_connect", transport.autoConnect)
             .putFloat("curve", steeringProcessor.curve)
+            .putBoolean("brake_as_button", pedalSettings.brakeAsButton)
+            .putBoolean("throttle_as_button", pedalSettings.throttleAsButton)
             .putFloat("beta", steeringProcessor.madgwick.beta)
             .putFloat("lock_angle", steeringProcessor.lockAngleDeg)
             .putFloat("deadzone", steeringProcessor.deadzoneDeg)
@@ -242,29 +248,33 @@ fun F1ControllerApp(
     sensorLogger: SensorLogger,
     transport: UdpTransport,
     steeringProcessor: SteeringProcessor,
+    pedalSettings: PedalSettings,
 ) {
     val navController = rememberNavController()
     val currentBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStack?.destination?.route
 
+    fun navigateTo(route: String) {
+        if (currentRoute != route) {
+            navController.navigate(route) {
+                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
     Scaffold(
         bottomBar = {
-            NavigationBar(
+            // The controller screen is full-screen; it has its own settings button
+            if (currentRoute != NavTab.CONTROLLER.route) NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
                 tonalElevation = 0.dp
             ) {
                 NavTab.entries.forEach { tab ->
                     NavigationBarItem(
                         selected = currentRoute == tab.route,
-                        onClick = {
-                            if (currentRoute != tab.route) {
-                                navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        },
+                        onClick = { navigateTo(tab.route) },
                         icon = { Icon(tab.icon, contentDescription = tab.label) },
                         label = { Text(tab.label, fontSize = 11.sp) },
                     )
@@ -280,7 +290,10 @@ fun F1ControllerApp(
             composable(NavTab.CONTROLLER.route) {
                 ControllerScreen(
                     transport = transport,
-                    onSteeringAngleDisplay = { steeringProcessor.currentAngleDeg }
+                    onSteeringAngleDisplay = { steeringProcessor.currentAngleDeg },
+                    lockAngleDeg = { steeringProcessor.lockAngleDeg },
+                    pedalSettings = pedalSettings,
+                    onOpenSettings = { navigateTo(NavTab.SETTINGS.route) },
                 )
             }
             composable(NavTab.LOGGER.route) {
@@ -290,6 +303,7 @@ fun F1ControllerApp(
                 SettingsScreen(
                     transport = transport,
                     steeringProcessor = steeringProcessor,
+                    pedalSettings = pedalSettings,
                 )
             }
         }

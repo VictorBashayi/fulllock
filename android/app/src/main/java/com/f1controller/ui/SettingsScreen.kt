@@ -25,6 +25,7 @@ import com.f1controller.network.UdpTransport
 fun SettingsScreen(
     transport: UdpTransport,
     steeringProcessor: SteeringProcessor,
+    pedalSettings: PedalSettings,
 ) {
     var serverIp by remember { mutableStateOf(transport.serverIp) }
     var serverPort by remember { mutableStateOf(transport.serverPort.toString()) }
@@ -267,6 +268,18 @@ fun SettingsScreen(
             }
         }
 
+        // ---- Pedals ----
+        SectionCard("Pedals") {
+            PedalModeRow("Brake", pedalSettings.brakeAsButton) { pedalSettings.brakeAsButton = it }
+            Spacer(modifier = Modifier.height(8.dp))
+            PedalModeRow("Throttle", pedalSettings.throttleAsButton) { pedalSettings.throttleAsButton = it }
+            Text(
+                "Slider = drag up for more pressure. Button = press for 100%, release for 0%.",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         // ---- Live Debug Info ----
         SectionCard("Live Debug") {
             val tState by transport.state.collectAsState()
@@ -303,6 +316,20 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
             Spacer(modifier = Modifier.height(12.dp))
             content()
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PedalModeRow(label: String, asButton: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("$label:", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.width(70.dp))
+        FilterChip(selected = !asButton, onClick = { onChange(false) }, label = { Text("Slider") })
+        FilterChip(selected = asButton, onClick = { onChange(true) }, label = { Text("Button") })
     }
 }
 
