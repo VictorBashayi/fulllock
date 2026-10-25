@@ -95,6 +95,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         sensorLogger = SensorLogger(sensorManager, sensorHandler)
         loadSettings()
+        if (transport.autoConnect) transport.connect()
 
         gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
         accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -148,6 +149,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         transport.serverIp = prefs.getString("server_ip", transport.serverIp) ?: transport.serverIp
         transport.serverPort = prefs.getInt("server_port", transport.serverPort)
+        transport.autoConnect = prefs.getBoolean("auto_connect", transport.autoConnect)
+        steeringProcessor.curve = prefs.getFloat("curve", steeringProcessor.curve)
         steeringProcessor.madgwick.beta = prefs.getFloat("beta", steeringProcessor.madgwick.beta)
         steeringProcessor.lockAngleDeg = prefs.getFloat("lock_angle", steeringProcessor.lockAngleDeg)
         steeringProcessor.deadzoneDeg = prefs.getFloat("deadzone", steeringProcessor.deadzoneDeg)
@@ -162,6 +165,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putString("server_ip", transport.serverIp)
             .putInt("server_port", transport.serverPort)
+            .putBoolean("auto_connect", transport.autoConnect)
+            .putFloat("curve", steeringProcessor.curve)
             .putFloat("beta", steeringProcessor.madgwick.beta)
             .putFloat("lock_angle", steeringProcessor.lockAngleDeg)
             .putFloat("deadzone", steeringProcessor.deadzoneDeg)

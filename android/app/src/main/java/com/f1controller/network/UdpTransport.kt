@@ -51,6 +51,10 @@ class UdpTransport {
     @Volatile var serverIp: String = "192.168.1.100"
     @Volatile var serverPort: Int = 5555
 
+    /** Start sending as soon as the app opens (UDP needs no handshake, so this
+     *  also "reconnects" by itself whenever the receiver is restarted). */
+    @Volatile var autoConnect: Boolean = true
+
     // ---- Internals ----
 
     /**

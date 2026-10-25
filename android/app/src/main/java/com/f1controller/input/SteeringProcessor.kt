@@ -39,6 +39,15 @@ class SteeringProcessor {
     /** Deadzone in degrees — inputs smaller than this map to zero. */
     @Volatile var deadzoneDeg: Float = 2f
 
+    /**
+     * Center smoothing, 0..1. Blends a linear response with a cubic one:
+     *   out = (1 - k)·x + k·x³
+     * Full lock still maps to full lock, but near center the response is
+     * flattened (slope 1 - k), so small wobbles on straights steer less.
+     * 0 = linear (original behaviour).
+     */
+    @Volatile var curve: Float = 0.3f
+
     /** Captured center offset in radians (set by calibration). */
     @Volatile var centerOffsetRad: Float = 0f
 
@@ -81,12 +90,23 @@ class SteeringProcessor {
         val effectiveRange = max(lockAngleDeg - deadzoneDeg, 1f)
         val normalized = afterDeadzone / effectiveRange  // -1 .. +1
         val clamped = max(-1f, min(1f, normalized))
-        val steer = (clamped * Short.MAX_VALUE).toInt().toShort()
+
+        // Step 6: Response curve
+        val shaped = applyCurve(clamped, curve)
+        val steer = (shaped * Short.MAX_VALUE).toInt().toShort()
 
         currentSteer = steer
         currentAngleDeg = centeredDeg
 
         return steer
+    }
+
+    companion object {
+        /** Maps x in -1..1 through the center-smoothing curve (see [curve]). */
+        fun applyCurve(x: Float, k: Float): Float {
+            val kc = k.coerceIn(0f, 1f)
+            return (1f - kc) * x + kc * x * x * x
+        }
     }
 
     /** Capture the current orientation as the new zero-center. */

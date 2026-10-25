@@ -32,6 +32,8 @@ fun SettingsScreen(
     var axis by remember { mutableStateOf(steeringProcessor.steeringAxis) }
     var lockAngle by remember { mutableFloatStateOf(steeringProcessor.lockAngleDeg) }
     var deadzone by remember { mutableFloatStateOf(steeringProcessor.deadzoneDeg) }
+    var curve by remember { mutableFloatStateOf(steeringProcessor.curve) }
+    var autoConnect by remember { mutableStateOf(transport.autoConnect) }
 
     Column(
         modifier = Modifier
@@ -71,6 +73,19 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = autoConnect,
+                    onCheckedChange = {
+                        autoConnect = it
+                        transport.autoConnect = it
+                    }
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("Connect automatically when the app opens", fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface)
+            }
             Spacer(modifier = Modifier.height(12.dp))
 
             val tState by transport.state.collectAsState()
@@ -192,6 +207,32 @@ fun SettingsScreen(
                     steeringProcessor.deadzoneDeg = it
                 },
                 valueRange = 0f..10f,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Response curve
+            val quarter = SteeringProcessor.applyCurve(0.25f, curve) * 100f
+            val half = SteeringProcessor.applyCurve(0.5f, curve) * 100f
+            Text(
+                "Center smoothing: ${(curve * 100).toInt()}%",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                "Turning the phone ¼ of the way to lock gives ${quarter.toInt()}% steering, " +
+                    "½ gives ${half.toInt()}%. Higher = calmer on straights, same full lock.",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Slider(
+                value = curve,
+                onValueChange = {
+                    curve = it
+                    steeringProcessor.curve = it
+                },
+                valueRange = 0f..1f,
                 modifier = Modifier.fillMaxWidth()
             )
 
