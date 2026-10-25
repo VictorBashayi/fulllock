@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -34,8 +35,19 @@ public sealed class TelemetryReceiver : IDisposable
     private const int MinHeaderSize = 24;
     private const int MaxCars = 22;
 
+    private const byte PacketIdSession = 1;
+    private const byte PacketIdLapData = 2;
     private const byte PacketIdCarTelemetry = 6;
     private const byte PacketIdCarStatus = 7;
+    private const byte PacketIdCarDamage = 10;
+
+    // Car damage entry, F1 2021 (39 bytes): tyresWear[4](f32) @0, then damage bytes.
+    private const int CarDamageEntrySize2021 = 39;
+
+    // Wheel arrays in every packet are ordered RL, RR, FL, FR; the phone wants FL, FR, RL, RR.
+    private static readonly int[] WheelOrder = { 2, 3, 0, 1 };
+
+    private static readonly TimeSpan RaceSendInterval = TimeSpan.FromMilliseconds(100);
 
     // Each car telemetry data entry: speed(u16)=2, throttle(f32)=4, steer(f32)=4, brake(f32)=4,
     // clutch(u8)=1, gear(i8)=1, engineRPM(u16)=2, drs(u8)=1, revLightsPercent(u8)=1,
@@ -80,6 +92,20 @@ public sealed class TelemetryReceiver : IDisposable
 
     /// <summary>Fires whenever <see cref="State"/> changes.</summary>
     public event Action<GameState>? OnStateChanged;
+
+    // ---- Race dashboard (F1 2021 only: lap data and damage layouts differ in later games) ----
+
+    private readonly RaceTracker _race = new();
+    private byte _totalLaps;
+    private byte _tyreCompound;   // visual: 16 soft, 17 medium, 18 hard, 7 inter, 8 wet
+    private byte _tyreAgeLaps;
+    private float _fuelLaps;
+    private readonly byte[] _tyreWear = new byte[4];  // %, FL FR RL RR
+    private readonly byte[] _tyreTemp = new byte[4];  // surface °C, FL FR RL RR
+    private long _lastRaceSend;
+
+    /// <summary>Fires at most every 100 ms while lap data arrives.</summary>
+    public event Action<RaceState>? OnRaceStateChanged;
 
     public TelemetryReceiver(int port = 20777)
     {
@@ -148,6 +174,8 @@ public sealed class TelemetryReceiver : IDisposable
                 DrsOpen = car[18] != 0,
                 RevLightsPercent = car[19],
             };
+            for (int w = 0; w < 4; w++)
+                _tyreTemp[w] = car[30 + WheelOrder[w]];
 
             OnTelemetryReceived?.Invoke(GameSteer, GameThrottle, GameBrake);
             OnStateChanged?.Invoke(State);
@@ -172,7 +200,40 @@ public sealed class TelemetryReceiver : IDisposable
                 ErsPercent = (byte)Math.Clamp(ersJoules / ErsMaxJoules * 100f, 0f, 100f),
                 ErsMode = car[ersOffset + 4],
             };
+            _fuelLaps = BinaryPrimitives.ReadSingleLittleEndian(car[13..]);
+            _tyreCompound = car[26];
+            _tyreAgeLaps = car[27];
             OnStateChanged?.Invoke(State);
+        }
+        else if (packetId == PacketIdSession)
+        {
+            // weather @0, trackTemperature @1, airTemperature @2, totalLaps @3
+            if (buffer.Length > headerSize + 3)
+                _totalLaps = buffer[headerSize + 3];
+        }
+        else if (packetId == PacketIdCarDamage && format == 2021)
+        {
+            int offset = headerSize + playerCarIndex * CarDamageEntrySize2021;
+            if (buffer.Length < offset + 16)
+                return;
+            for (int w = 0; w < 4; w++)
+            {
+                float wear = BinaryPrimitives.ReadSingleLittleEndian(buffer.AsSpan(offset + WheelOrder[w] * 4));
+                _tyreWear[w] = (byte)Math.Clamp(wear, 0f, 100f);
+            }
+        }
+        else if (packetId == PacketIdLapData && format == 2021)
+        {
+            float sessionTime = BinaryPrimitives.ReadSingleLittleEndian(buffer.AsSpan(14));
+            _race.Process(buffer, headerSize, playerCarIndex, sessionTime);
+
+            if (Stopwatch.GetElapsedTime(_lastRaceSend) >= RaceSendInterval)
+            {
+                _lastRaceSend = Stopwatch.GetTimestamp();
+                OnRaceStateChanged?.Invoke(new RaceState(
+                    _race.Info, _totalLaps, _tyreCompound, _tyreAgeLaps, _fuelLaps,
+                    (byte[])_tyreWear.Clone(), (byte[])_tyreTemp.Clone()));
+            }
         }
     }
 
@@ -208,6 +269,16 @@ public sealed class TelemetryReceiver : IDisposable
         _client?.Dispose();
     }
 }
+
+/// <summary>Timing and car condition for the phone's Car and Timing views. Tyre arrays are FL, FR, RL, RR.</summary>
+public sealed record RaceState(
+    RaceInfo Timing,
+    byte TotalLaps,
+    byte TyreCompound,
+    byte TyreAgeLaps,
+    float FuelLaps,
+    byte[] TyreWear,
+    byte[] TyreTemp);
 
 /// <summary>Player car values shown on the phone. ErsMode: 0 none, 1 medium, 2 hotlap, 3 overtake.</summary>
 public readonly record struct GameState(

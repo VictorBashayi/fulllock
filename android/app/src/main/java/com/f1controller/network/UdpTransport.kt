@@ -29,6 +29,9 @@ import kotlin.concurrent.thread
  *   [0xFE 0xFF 0xFF 0xFF][gear:i8][revLightsPct:u8][drsAllowed:u8][drsOpen:u8]
  *   [speedKph:u16][rpm:u16][ersPct:u8][ersMode:u8][pitLimiter:u8][reserved:u8]
  *
+ * Race state packet (54 bytes, receiver → phone, ~10 Hz): marker 0xFFFFFFFD;
+ * layout in PacketParser.cs (WriteRaceState) and [onRaceState].
+ *
  * UDP has no connection, so "connected" means a pong arrived within the last
  * [LINK_TIMEOUT_NS]. "active" means the send threads are running.
  */
@@ -62,6 +65,38 @@ class UdpTransport {
         val ersMode: Int,
         val pitLimiter: Boolean,
     )
+
+    /**
+     * Race timing and car condition (F1 2021), ~10 Hz. Times in ms; nullable
+     * values aren't known yet (no best lap, no car ahead...). Sector status:
+     * 0 none, 1 slower, 2 personal best, 3 overall best. Tyres: FL, FR, RL, RR.
+     */
+    data class RaceState(
+        val position: Int,
+        val totalLaps: Int,
+        val currentLap: Int,
+        val sector: Int,          // 0-2
+        val lapInvalid: Boolean,
+        val compound: Int,        // visual: 16 soft, 17 medium, 18 hard, 7 inter, 8 wet
+        val tyreAgeLaps: Int,
+        val currentLapMs: Long,
+        val lastLapMs: Long,
+        val bestLapMs: Long,
+        val deltaMs: Int?,
+        val s1Ms: Int,
+        val s2Ms: Int,
+        val s1Status: Int,
+        val s2Status: Int,
+        val fuelLaps: Float,      // laps of fuel left beyond the race distance
+        val gapAheadMs: Int?,
+        val gapBehindMs: Int?,
+        val tyreWear: IntArray,   // %
+        val tyreTemp: IntArray,   // surface °C
+    )
+
+    private val _race = MutableStateFlow<RaceState?>(null)
+    val race: StateFlow<RaceState?> = _race
+    @Volatile private var lastRaceNs = 0L
 
     private val _telemetry = MutableStateFlow<GameTelemetry?>(null)
     /** Latest game telemetry, or null if none arrived in the last [TELEMETRY_TIMEOUT_NS]. */
@@ -141,6 +176,7 @@ class UdpTransport {
         s.socket.close()
         _state.value = TransportState()
         _telemetry.value = null
+        _race.value = null
     }
 
     fun isRunning(): Boolean = session.get() != null
@@ -193,6 +229,7 @@ class UdpTransport {
                 )
                 // Game paused/closed or telemetry off: stop showing stale values
                 if (System.nanoTime() - lastTelemetryNs > TELEMETRY_TIMEOUT_NS) _telemetry.value = null
+                if (System.nanoTime() - lastRaceNs > TELEMETRY_TIMEOUT_NS) _race.value = null
             }
 
             // Fixed-rate schedule: sleep most of the gap, spin the last ~1ms
@@ -244,11 +281,15 @@ class UdpTransport {
                 s.socket.receive(recvPacket)
                 if (recvPacket.length < 16) continue
 
-                val bb = ByteBuffer.wrap(recvBuf, 0, 16).order(ByteOrder.LITTLE_ENDIAN)
+                val bb = ByteBuffer.wrap(recvBuf, 0, recvPacket.length).order(ByteOrder.LITTLE_ENDIAN)
                 when (bb.int) {
                     PING_MARKER -> {}
                     GAME_STATE_MARKER -> {
                         onGameState(bb)
+                        continue
+                    }
+                    RACE_STATE_MARKER -> {
+                        if (recvPacket.length >= RACE_STATE_SIZE) onRaceState(bb)
                         continue
                     }
                     else -> continue
@@ -286,6 +327,43 @@ class UdpTransport {
             pitLimiter = bb.get().toInt() != 0,
         )
         lastTelemetryNs = System.nanoTime()
+    }
+
+    private fun onRaceState(bb: ByteBuffer) {
+        fun u8() = bb.get().toInt() and 0xFF
+        val position = u8()
+        val totalLaps = u8()
+        val currentLap = u8()
+        val sector = u8()
+        val lapInvalid = u8() != 0
+        val compound = u8()
+        val tyreAge = u8()
+        val flags = u8()
+        val currentLapMs = bb.int.toLong() and 0xFFFFFFFFL
+        val lastLapMs = bb.int.toLong() and 0xFFFFFFFFL
+        val bestLapMs = bb.int.toLong() and 0xFFFFFFFFL
+        val delta = bb.int
+        val s1 = bb.short.toInt() and 0xFFFF
+        val s2 = bb.short.toInt() and 0xFFFF
+        val s1Status = u8()
+        val s2Status = u8()
+        val fuel = bb.short / 100f
+        val gapAhead = bb.int
+        val gapBehind = bb.int
+        val wear = IntArray(4) { u8() }
+        val temp = IntArray(4) { u8() }
+
+        _race.value = RaceState(
+            position, totalLaps, currentLap, sector, lapInvalid, compound, tyreAge,
+            currentLapMs, lastLapMs, bestLapMs,
+            deltaMs = if (flags and 1 != 0) delta else null,
+            s1Ms = s1, s2Ms = s2, s1Status = s1Status, s2Status = s2Status,
+            fuelLaps = fuel,
+            gapAheadMs = if (flags and 2 != 0) gapAhead else null,
+            gapBehindMs = if (flags and 4 != 0) gapBehind else null,
+            tyreWear = wear, tyreTemp = temp,
+        )
+        lastRaceNs = System.nanoTime()
     }
 
     private fun resetStats() {
@@ -340,6 +418,8 @@ class UdpTransport {
     companion object {
         private const val PING_MARKER = 0xFFFFFFFF.toInt()
         private const val GAME_STATE_MARKER = 0xFFFFFFFE.toInt()
+        private const val RACE_STATE_MARKER = 0xFFFFFFFD.toInt()
+        private const val RACE_STATE_SIZE = 54
         private const val TELEMETRY_TIMEOUT_NS = 1_500_000_000L
         private const val LINK_TIMEOUT_NS = 1_000_000_000L
     }

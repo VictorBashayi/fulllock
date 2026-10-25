@@ -116,6 +116,12 @@ class Program
                 ControlPacket.WriteGameState(stateBuf, state);
                 receiver.SendToPhone(stateBuf);
             };
+            var raceBuf = new byte[ControlPacket.RaceStateSize];
+            telemetry.OnRaceStateChanged += race =>
+            {
+                ControlPacket.WriteRaceState(raceBuf, race);
+                receiver.SendToPhone(raceBuf);
+            };
         }
 
         // Wire packet reception to ViGEm submission

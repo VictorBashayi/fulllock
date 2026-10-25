@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -64,7 +65,7 @@ import kotlin.math.sin
  *   0x4000 = X             0x8000 = Y
  */
 
-private object Palette {
+internal object Palette {
     val BgCenter = Color(0xFF10232B)
     val BgEdge = Color(0xFF090F14)
     val Panel = Color(0xFF111B24)
@@ -78,7 +79,7 @@ private object Palette {
     val Blue = Color(0xFF5B7BF0)
 }
 
-private val Condensed = FontFamily(
+internal val Condensed = FontFamily(
     android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.BOLD)
 )
 
@@ -111,6 +112,9 @@ fun ControllerScreen(
     val tState by transport.state.collectAsState()
     // Null until the receiver forwards game telemetry (game running with UDP telemetry on)
     val game by transport.telemetry.collectAsState()
+    val race by transport.race.collectAsState()
+    // Centre panel: 0 wheel, 1 car, 2 timing — tap to cycle
+    var centerPage by remember { mutableIntStateOf(0) }
 
     var throttleVal by remember { mutableFloatStateOf(0f) }
     var brakeVal by remember { mutableFloatStateOf(0f) }
@@ -170,13 +174,16 @@ fun ControllerScreen(
                     }
                 }
             }
-            Row(
+            Column(
                 Modifier.weight(0.32f).fillMaxHeight(),
-                horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.Top
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                PillButton("BACK", BTN_BACK, buttonMask, onButton, Palette.Text)
-                PillButton("START", BTN_START, buttonMask, onButton, Palette.Cyan)
+                Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    PillButton("BACK", BTN_BACK, buttonMask, onButton, Palette.Text)
+                    PillButton("START", BTN_START, buttonMask, onButton, Palette.Cyan)
+                }
+                race?.let { InfoStrip(it) }
             }
             Row(Modifier.weight(0.34f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(gap)) {
                 DrsButton(game, buttonMask, onButton, Modifier.weight(1f).fillMaxHeight())
@@ -208,21 +215,33 @@ fun ControllerScreen(
                 Modifier.weight(0.26f).fillMaxHeight(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                SteeringWheel(
-                    angle = angle,
-                    lockAngleDeg = lockAngleDeg(),
-                    // Without telemetry the LEDs follow the throttle pedal instead
-                    revLevel = game?.let { it.revLightsPct / 100f } ?: throttleVal,
-                    gearText = game?.let { gearName(it.gear) } ?: "–",
-                    modifier = Modifier.fillMaxWidth().weight(1f)
-                )
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .pointerInput(Unit) { detectTapGestures { centerPage = (centerPage + 1) % 3 } },
+                    contentAlignment = Alignment.Center
+                ) {
+                    when (centerPage) {
+                        0 -> SteeringWheel(
+                            angle = angle,
+                            lockAngleDeg = lockAngleDeg(),
+                            // Without telemetry the LEDs follow the throttle pedal instead
+                            revLevel = game?.let { it.revLightsPct / 100f } ?: throttleVal,
+                            gearText = game?.let { gearName(it.gear) } ?: "–",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        1 -> CarView(race, game)
+                        else -> TimingView(race)
+                    }
+                }
                 Text(
                     text = game?.let { "${angle.toInt()}°  ·  ${it.speedKph} km/h" } ?: "${angle.toInt()}°",
                     fontFamily = FontFamily.Monospace,
                     fontSize = 16.sp,
                     color = Palette.TextDim
                 )
-                Spacer(Modifier.height(8.dp))
+                PageDots(centerPage, count = 3)
                 StatusPills(tState, lockAngleDeg(), onOpenSettings)
             }
             Box(Modifier.weight(0.23f).fillMaxHeight(), contentAlignment = Alignment.Center) {

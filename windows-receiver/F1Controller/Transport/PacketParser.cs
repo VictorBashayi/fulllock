@@ -44,6 +44,46 @@ public readonly record struct ControlPacket(
         dest[15] = 0;
     }
 
+    /// <summary>
+    /// Race timing and car condition sent to the phone ~10 Hz (54 bytes, little-endian):
+    /// [marker:u32][position:u8][totalLaps:u8][currentLap:u8][sector:u8][lapInvalid:u8]
+    /// [compound:u8][tyreAge:u8][flags:u8 (1=delta, 2=gapAhead, 4=gapBehind valid)]
+    /// [currentLapMs:u32][lastLapMs:u32][bestLapMs:u32][deltaMs:i32][s1Ms:u16][s2Ms:u16]
+    /// [s1Status:u8][s2Status:u8][fuelLaps×100:i16][gapAheadMs:i32][gapBehindMs:i32]
+    /// [tyreWear%:u8×4][tyreTempC:u8×4][reserved:u16]   (tyres FL, FR, RL, RR)
+    /// </summary>
+    public const uint RaceStateMarker = 0xFFFFFFFD;
+    public const int RaceStateSize = 54;
+
+    public static void WriteRaceState(Span<byte> dest, Validation.RaceState s)
+    {
+        var t = s.Timing;
+        BinaryPrimitives.WriteUInt32LittleEndian(dest, RaceStateMarker);
+        dest[4] = t.Position;
+        dest[5] = s.TotalLaps;
+        dest[6] = t.CurrentLap;
+        dest[7] = t.Sector;
+        dest[8] = t.LapInvalid ? (byte)1 : (byte)0;
+        dest[9] = s.TyreCompound;
+        dest[10] = s.TyreAgeLaps;
+        dest[11] = (byte)((t.DeltaMs.HasValue ? 1 : 0) | (t.GapAheadMs.HasValue ? 2 : 0) | (t.GapBehindMs.HasValue ? 4 : 0));
+        BinaryPrimitives.WriteUInt32LittleEndian(dest[12..], t.CurrentLapMs);
+        BinaryPrimitives.WriteUInt32LittleEndian(dest[16..], t.LastLapMs);
+        BinaryPrimitives.WriteUInt32LittleEndian(dest[20..], t.BestLapMs);
+        BinaryPrimitives.WriteInt32LittleEndian(dest[24..], t.DeltaMs ?? 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(dest[28..], t.S1);
+        BinaryPrimitives.WriteUInt16LittleEndian(dest[30..], t.S2);
+        dest[32] = (byte)t.S1Status;
+        dest[33] = (byte)t.S2Status;
+        BinaryPrimitives.WriteInt16LittleEndian(dest[34..], (short)Math.Clamp(s.FuelLaps * 100f, short.MinValue, short.MaxValue));
+        BinaryPrimitives.WriteInt32LittleEndian(dest[36..], t.GapAheadMs ?? 0);
+        BinaryPrimitives.WriteInt32LittleEndian(dest[40..], t.GapBehindMs ?? 0);
+        s.TyreWear.AsSpan(0, 4).CopyTo(dest[44..]);
+        s.TyreTemp.AsSpan(0, 4).CopyTo(dest[48..]);
+        dest[52] = 0;
+        dest[53] = 0;
+    }
+
     public static bool IsPing(ReadOnlySpan<byte> data)
     {
         return data.Length >= 4 && BinaryPrimitives.ReadUInt32LittleEndian(data) == PingMarker;
