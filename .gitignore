@@ -1,0 +1,43 @@
+# Android
+*.apk
+*.aab
+*.dex
+*.class
+bin/
+gen/
+out/
+build/
+.gradle/
+local.properties
+.idea/
+*.iml
+captures/
+.externalNativeBuild
+.cxx
+
+# .NET / Windows
+bin/
+obj/
+*.exe
+*.dll
+*.pdb
+*.user
+*.suo
+.vs/
+packages/
+
+# IDE
+.vscode/
+*.swp
+*.swo
+*~
+
+# CSV data files
+*.csv
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Downloaded archives (Gradle distributions etc.)
+*.zip

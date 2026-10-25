@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">F1 Controller</string>
+    <string name="tab_controller">Controller</string>
+    <string name="tab_logger">IMU Logger</string>
+    <string name="tab_settings">Settings</string>
+</resources>
