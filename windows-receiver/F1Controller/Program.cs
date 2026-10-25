@@ -16,6 +16,7 @@ class Program
         bool validate = false;
         bool logTransport = false;
         bool noVigem = false;
+        bool noTelemetry = false;
 
         // Simple argument parsing
         for (int i = 0; i < args.Length; i++)
@@ -37,6 +38,9 @@ class Program
                     break;
                 case "--no-vigem":
                     noVigem = true;
+                    break;
+                case "--no-telemetry":
+                    noTelemetry = true;
                     break;
                 case "--help":
                 case "-h":
@@ -61,7 +65,8 @@ class Program
         Console.WriteLine("======================================");
         Console.WriteLine($"  Port:       {port}");
         Console.WriteLine($"  ViGEm:      {(noVigem ? "disabled" : "enabled")}");
-        Console.WriteLine($"  Validate:   {(validate ? "yes (F1 telemetry on 20777)" : "no")}");
+        Console.WriteLine($"  Telemetry:  {(noTelemetry && !validate ? "off" : "F1 game UDP on 20777 → phone dashboard")}");
+        Console.WriteLine($"  Validate:   {(validate ? "yes" : "no")}");
         Console.WriteLine($"  Log CSV:    {(logTransport ? "yes" : "no")}");
         Console.WriteLine();
 
@@ -97,9 +102,20 @@ class Program
         TelemetryReceiver? telemetry = null;
 
         if (validate)
-        {
             correlation = new CorrelationLogger();
+        if (validate || !noTelemetry)
             telemetry = new TelemetryReceiver(20777);
+
+        // Forward gear/revs/DRS/ERS to the phone as the game reports them.
+        // Called on the telemetry thread only, so one buffer is enough.
+        if (telemetry != null && !noTelemetry)
+        {
+            var stateBuf = new byte[ControlPacket.GameStateSize];
+            telemetry.OnStateChanged += state =>
+            {
+                ControlPacket.WriteGameState(stateBuf, state);
+                receiver.SendToPhone(stateBuf);
+            };
         }
 
         // Wire packet reception to ViGEm submission
@@ -224,6 +240,7 @@ class Program
               --validate        Enable F1 telemetry validation (port 20777)
               --log-transport   Log transport metrics to CSV
               --no-vigem        Disable virtual controller (transport only)
+              --no-telemetry    Don't listen for game telemetry / send it to the phone
               -h, --help        Show this help
 
             Examples:

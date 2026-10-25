@@ -109,6 +109,8 @@ fun ControllerScreen(
     onOpenSettings: () -> Unit,
 ) {
     val tState by transport.state.collectAsState()
+    // Null until the receiver forwards game telemetry (game running with UDP telemetry on)
+    val game by transport.telemetry.collectAsState()
 
     var throttleVal by remember { mutableFloatStateOf(0f) }
     var brakeVal by remember { mutableFloatStateOf(0f) }
@@ -155,11 +157,16 @@ fun ControllerScreen(
             Row(Modifier.weight(0.34f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(gap)) {
                 GearButton(up = false, BTN_GEAR_DOWN, buttonMask, onButton, Modifier.weight(1.35f))
                 PanelButton(BTN_ERS, buttonMask, onButton, Modifier.weight(1f).fillMaxHeight()) { pressed ->
+                    val g = game
+                    val overtake = g?.ersMode == 3
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("ERS", fontFamily = Condensed, fontSize = 30.sp,
-                            color = if (pressed) Palette.Yellow else Palette.Text)
-                        Text("DEPLOY", fontFamily = Condensed, fontSize = 11.sp,
-                            letterSpacing = 2.sp, color = Palette.TextDim)
+                            color = if (pressed || overtake) Palette.Yellow else Palette.Text)
+                        Text(
+                            if (g == null) "DEPLOY" else "${g.ersPct}% · ${ersModeName(g.ersMode)}",
+                            fontFamily = Condensed, fontSize = 11.sp, letterSpacing = 2.sp,
+                            color = if (overtake) Palette.Yellow else Palette.TextDim
+                        )
                     }
                 }
             }
@@ -172,7 +179,7 @@ fun ControllerScreen(
                 PillButton("START", BTN_START, buttonMask, onButton, Palette.Cyan)
             }
             Row(Modifier.weight(0.34f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                DrsButton(buttonMask, onButton, Modifier.weight(1f).fillMaxHeight())
+                DrsButton(game, buttonMask, onButton, Modifier.weight(1f).fillMaxHeight())
                 GearButton(up = true, BTN_GEAR_UP, buttonMask, onButton, Modifier.weight(1.35f))
             }
         }
@@ -192,23 +199,25 @@ fun ControllerScreen(
                 },
                 color = Palette.Red,
                 asButton = pedalSettings.brakeAsButton,
-                modifier = Modifier.weight(0.17f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
+                modifier = Modifier.weight(0.16f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
             )
-            Box(Modifier.weight(0.17f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+            Box(Modifier.weight(0.19f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                 DPad(buttonMask, onButton)
             }
             Column(
-                Modifier.weight(0.28f).fillMaxHeight(),
+                Modifier.weight(0.26f).fillMaxHeight(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 SteeringWheel(
                     angle = angle,
                     lockAngleDeg = lockAngleDeg(),
-                    revLevel = throttleVal,
+                    // Without telemetry the LEDs follow the throttle pedal instead
+                    revLevel = game?.let { it.revLightsPct / 100f } ?: throttleVal,
+                    gearText = game?.let { gearName(it.gear) } ?: "–",
                     modifier = Modifier.fillMaxWidth().weight(1f)
                 )
                 Text(
-                    text = "${angle.toInt()}°",
+                    text = game?.let { "${angle.toInt()}°  ·  ${it.speedKph} km/h" } ?: "${angle.toInt()}°",
                     fontFamily = FontFamily.Monospace,
                     fontSize = 16.sp,
                     color = Palette.TextDim
@@ -216,7 +225,7 @@ fun ControllerScreen(
                 Spacer(Modifier.height(8.dp))
                 StatusPills(tState, lockAngleDeg(), onOpenSettings)
             }
-            Box(Modifier.weight(0.21f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+            Box(Modifier.weight(0.23f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                 FaceButtons(buttonMask, onButton)
             }
             VerticalPedal(
@@ -228,10 +237,23 @@ fun ControllerScreen(
                 },
                 color = Palette.Cyan,
                 asButton = pedalSettings.throttleAsButton,
-                modifier = Modifier.weight(0.17f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
+                modifier = Modifier.weight(0.16f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
             )
         }
     }
+}
+
+private fun gearName(gear: Int) = when {
+    gear < 0 -> "R"
+    gear == 0 -> "N"
+    else -> gear.toString()
+}
+
+private fun ersModeName(mode: Int) = when (mode) {
+    1 -> "MED"
+    2 -> "HOT"
+    3 -> "OVT"
+    else -> "OFF"
 }
 
 // ---- Buttons ----
@@ -318,26 +340,40 @@ private fun GearButton(
     }
 }
 
+/**
+ * With telemetry: green READY only when the game allows DRS, solid when the
+ * flap is open, grey otherwise. Without telemetry it just shows the press.
+ */
 @Composable
 private fun DrsButton(
+    game: UdpTransport.GameTelemetry?,
     mask: Int,
     onButton: (bit: Int, pressed: Boolean) -> Unit,
     modifier: Modifier,
 ) {
+    val open = game?.drsOpen == true
+    val available = game == null || game.drsAllowed || open
+    val color = if (available) Palette.Green else Palette.TextDim
     PanelButton(
         BTN_DRS, mask, onButton, modifier,
-        accent = Palette.Green,
+        accent = color,
         shape = RoundedCornerShape(22.dp),
-        idleBorder = Palette.Green.copy(alpha = 0.6f),
-        idleFill = Palette.Green.copy(alpha = 0.08f),
+        idleBorder = if (open) color else color.copy(alpha = 0.6f),
+        idleFill = color.copy(alpha = if (open) 0.25f else 0.08f),
     ) { pressed ->
+        val status = when {
+            game == null -> if (pressed) "OPEN" else "READY"
+            open -> "OPEN"
+            game.drsAllowed -> "READY"
+            else -> "NOT READY"
+        }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("DRS", fontFamily = Condensed, fontSize = 38.sp, color = Palette.Green)
+            Text("DRS", fontFamily = Condensed, fontSize = 38.sp, color = color)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(8.dp).clip(CircleShape).background(Palette.Green))
+                Box(Modifier.size(8.dp).clip(CircleShape).background(color))
                 Spacer(Modifier.width(6.dp))
-                Text(if (pressed) "OPEN" else "READY", fontFamily = Condensed, fontSize = 12.sp,
-                    letterSpacing = 2.sp, color = Palette.Green)
+                Text(status, fontFamily = Condensed, fontSize = 12.sp,
+                    letterSpacing = 2.sp, color = color)
             }
         }
     }
@@ -369,7 +405,7 @@ private fun DPad(
     onButton: (bit: Int, pressed: Boolean) -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f, matchHeightConstraintsFirst = true)) {
-        val key = min(maxWidth.value, maxHeight.value).dp / 3.0f
+        val key = min(maxWidth.value, maxHeight.value).dp / 2.9f
         @Composable
         fun Key(bit: Int, icon: ImageVector, align: Alignment) {
             PanelButton(bit, mask, onButton, Modifier.size(key).align(align),
@@ -392,7 +428,7 @@ private fun FaceButtons(
     onButton: (bit: Int, pressed: Boolean) -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f, matchHeightConstraintsFirst = true)) {
-        val d = min(maxWidth.value, maxHeight.value).dp / 2.6f
+        val d = min(maxWidth.value, maxHeight.value).dp / 2.8f
         @Composable
         fun Face(label: String, bit: Int, color: Color, align: Alignment) {
             PanelButton(
@@ -511,6 +547,7 @@ private fun SteeringWheel(
     angle: Float,
     lockAngleDeg: Float,
     revLevel: Float,
+    gearText: String,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier, contentAlignment = Alignment.Center) {
@@ -549,7 +586,7 @@ private fun SteeringWheel(
         ) {
             val textSize: TextUnit = (maxHeight.value * 0.22f).sp
             Canvas(Modifier.fillMaxSize()) { drawWheel(revLevel) }
-            Text("–", fontFamily = FontFamily.Monospace, fontSize = textSize, color = Palette.Cyan,
+            Text(gearText, fontFamily = FontFamily.Monospace, fontSize = textSize, color = Palette.Cyan,
                 modifier = Modifier.align(Alignment.Center))
         }
     }
@@ -612,20 +649,21 @@ private fun StatusPills(
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Pill {
             Box(Modifier.size(8.dp).clip(CircleShape)
                 .background(if (tState.isConnected) Palette.Green else Palette.Red))
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(6.dp))
             Text(
-                if (tState.isConnected) "WIFI ${tState.rttAvgMs.toInt()} ms" else "OFFLINE",
-                fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Palette.Text
+                if (tState.isConnected) "${tState.rttAvgMs.toInt()} ms" else "OFFLINE",
+                fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Palette.Text,
+                maxLines = 1, softWrap = false
             )
         }
         Pill {
             Text("LOCK ${(lockAngleDeg * 2).toInt()}°", fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp, color = Palette.Text)
+                fontSize = 12.sp, color = Palette.Text, maxLines = 1, softWrap = false)
         }
         IconButton(onClick = onOpenSettings, modifier = Modifier.size(32.dp)) {
             Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Palette.TextDim,
@@ -643,7 +681,7 @@ private fun Pill(content: @Composable RowScope.() -> Unit) {
             .clip(shape)
             .background(Palette.Panel)
             .border(1.dp, Palette.PanelBorder, shape)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content
     )

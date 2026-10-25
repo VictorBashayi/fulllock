@@ -9,8 +9,9 @@ namespace F1Controller.Validation;
 
 /// <summary>
 /// Receives Codemasters F1 game UDP telemetry on port 20777.
-/// Parses Car Telemetry packets (ID 6) to extract the player car's
-/// steering, throttle, and brake values as the game sees them.
+/// Parses Car Telemetry (ID 6) and Car Status (ID 7) packets for the
+/// player car: the inputs as the game sees them (for validation) plus
+/// gear, revs, DRS and ERS (forwarded to the phone's dashboard).
 /// </summary>
 public sealed class TelemetryReceiver : IDisposable
 {
@@ -34,6 +35,7 @@ public sealed class TelemetryReceiver : IDisposable
     private const int MaxCars = 22;
 
     private const byte PacketIdCarTelemetry = 6;
+    private const byte PacketIdCarStatus = 7;
 
     // Each car telemetry data entry: speed(u16)=2, throttle(f32)=4, steer(f32)=4, brake(f32)=4,
     // clutch(u8)=1, gear(i8)=1, engineRPM(u16)=2, drs(u8)=1, revLightsPercent(u8)=1,
@@ -43,6 +45,21 @@ public sealed class TelemetryReceiver : IDisposable
     // Total per car: 2+4+4+4+1+1+2+1+1+2+8+4+4+2+16+4 = 60 bytes
     // (identical in F1 2021 through F1 25)
     private const int CarTelemetryEntrySize = 60;
+
+    // Car status entry, F1 2021 / F1 22 (47 bytes): tractionControl @0, antiLockBrakes @1,
+    // fuelMix @2, frontBrakeBias @3, pitLimiterStatus @4, fuelInTank(f32) @5,
+    // fuelCapacity(f32) @9, fuelRemainingLaps(f32) @13, maxRPM(u16) @17, idleRPM(u16) @19,
+    // maxGears @21, drsAllowed @22, drsActivationDistance(u16) @23, actualTyreCompound @25,
+    // visualTyreCompound @26, tyresAgeLaps @27, vehicleFiaFlags(i8) @28,
+    // ersStoreEnergy(f32) @29, ersDeployMode @33, ersHarvested MGUK/MGUH, ersDeployed,
+    // networkPaused.
+    // F1 23+ inserts enginePowerICE(f32) + enginePowerMGUK(f32) after vehicleFiaFlags,
+    // pushing the ERS fields back 8 bytes (55-byte entry).
+    private const int CarStatusEntrySize2021 = 47;
+    private const int CarStatusEntrySize2023 = 55;
+
+    /// <summary>Full ERS battery in joules (4 MJ).</summary>
+    private const float ErsMaxJoules = 4_000_000f;
 
     /// <summary>packetFormat of the last telemetry packet seen (e.g. 2021, 2024); 0 if none.</summary>
     public int PacketFormat { get; private set; }
@@ -56,7 +73,13 @@ public sealed class TelemetryReceiver : IDisposable
     public float GameBrake { get; private set; }     // 0.0 to 1.0
     public bool HasData { get; private set; }
 
+    /// <summary>Dashboard values for the phone; combines the latest telemetry and status packets.</summary>
+    public GameState State { get; private set; }
+
     public event Action<float, float, float>? OnTelemetryReceived; // steer, throttle, brake
+
+    /// <summary>Fires whenever <see cref="State"/> changes.</summary>
+    public event Action<GameState>? OnStateChanged;
 
     public TelemetryReceiver(int port = 20777)
     {
@@ -85,22 +108,7 @@ public sealed class TelemetryReceiver : IDisposable
                     continue;
                 }
 
-                if (!TryParseCarTelemetry(result.Buffer, out int format,
-                        out float steer, out float throttle, out float brake))
-                    continue;
-
-                if (format != PacketFormat)
-                {
-                    PacketFormat = format;
-                    Console.WriteLine($"[Telemetry] Receiving F1 {format} telemetry format.");
-                }
-
-                GameSteer = steer;
-                GameThrottle = throttle;
-                GameBrake = brake;
-                HasData = true;
-
-                OnTelemetryReceived?.Invoke(steer, throttle, brake);
+                Handle(result.Buffer);
             }
         }
         finally
@@ -109,12 +117,72 @@ public sealed class TelemetryReceiver : IDisposable
         }
     }
 
-    // Spans can't live in an async method (C# 12), so parsing is separate.
-    private static bool TryParseCarTelemetry(ReadOnlySpan<byte> data, out int packetFormat,
-        out float steer, out float throttle, out float brake)
+    private void Handle(byte[] buffer)
     {
-        steer = throttle = brake = 0;
+        if (!TryParseHeader(buffer, out int format, out byte packetId, out int headerSize, out byte playerCarIndex))
+            return;
+
+        if (format != PacketFormat)
+        {
+            PacketFormat = format;
+            Console.WriteLine($"[Telemetry] Receiving F1 {format} telemetry format.");
+        }
+
+        if (packetId == PacketIdCarTelemetry)
+        {
+            int offset = headerSize + playerCarIndex * CarTelemetryEntrySize;
+            if (buffer.Length < offset + CarTelemetryEntrySize)
+                return;
+
+            var car = buffer.AsSpan(offset, CarTelemetryEntrySize);
+            GameThrottle = BinaryPrimitives.ReadSingleLittleEndian(car[2..]);
+            GameSteer = BinaryPrimitives.ReadSingleLittleEndian(car[6..]);
+            GameBrake = BinaryPrimitives.ReadSingleLittleEndian(car[10..]);
+            HasData = true;
+
+            State = State with
+            {
+                SpeedKph = BinaryPrimitives.ReadUInt16LittleEndian(car),
+                Gear = (sbyte)car[15],
+                Rpm = BinaryPrimitives.ReadUInt16LittleEndian(car[16..]),
+                DrsOpen = car[18] != 0,
+                RevLightsPercent = car[19],
+            };
+
+            OnTelemetryReceived?.Invoke(GameSteer, GameThrottle, GameBrake);
+            OnStateChanged?.Invoke(State);
+        }
+        else if (packetId == PacketIdCarStatus)
+        {
+            bool newLayout = format >= 2023;
+            int entrySize = newLayout ? CarStatusEntrySize2023 : CarStatusEntrySize2021;
+            int ersOffset = newLayout ? 37 : 29;
+
+            int offset = headerSize + playerCarIndex * entrySize;
+            if (buffer.Length < offset + entrySize)
+                return;
+
+            var car = buffer.AsSpan(offset, entrySize);
+            float ersJoules = BinaryPrimitives.ReadSingleLittleEndian(car[ersOffset..]);
+
+            State = State with
+            {
+                PitLimiter = car[4] != 0,
+                DrsAllowed = car[22] != 0,
+                ErsPercent = (byte)Math.Clamp(ersJoules / ErsMaxJoules * 100f, 0f, 100f),
+                ErsMode = car[ersOffset + 4],
+            };
+            OnStateChanged?.Invoke(State);
+        }
+    }
+
+    private static bool TryParseHeader(ReadOnlySpan<byte> data, out int packetFormat,
+        out byte packetId, out int headerSize, out byte playerCarIndex)
+    {
         packetFormat = 0;
+        packetId = 0;
+        headerSize = 0;
+        playerCarIndex = 0;
         if (data.Length < MinHeaderSize)
             return false;
 
@@ -129,24 +197,10 @@ public sealed class TelemetryReceiver : IDisposable
         if (data.Length < layout.Size)
             return false;
 
-        byte packetId = data[layout.PacketIdOffset];
-        byte playerCarIndex = data[layout.PlayerCarIndexOffset];
-
-        if (packetId != PacketIdCarTelemetry || playerCarIndex >= MaxCars)
-            return false;
-
-        // Validate we have enough data for the player car's telemetry
-        int playerOffset = layout.Size + playerCarIndex * CarTelemetryEntrySize;
-        if (data.Length < playerOffset + CarTelemetryEntrySize)
-            return false;
-
-        var carData = data[playerOffset..];
-
-        // Parse: speed(u16), throttle(f32), steer(f32), brake(f32)
-        throttle = BinaryPrimitives.ReadSingleLittleEndian(carData[2..]);
-        steer = BinaryPrimitives.ReadSingleLittleEndian(carData[6..]);
-        brake = BinaryPrimitives.ReadSingleLittleEndian(carData[10..]);
-        return true;
+        packetId = data[layout.PacketIdOffset];
+        playerCarIndex = data[layout.PlayerCarIndexOffset];
+        headerSize = layout.Size;
+        return playerCarIndex < MaxCars;
     }
 
     public void Dispose()
@@ -154,3 +208,15 @@ public sealed class TelemetryReceiver : IDisposable
         _client?.Dispose();
     }
 }
+
+/// <summary>Player car values shown on the phone. ErsMode: 0 none, 1 medium, 2 hotlap, 3 overtake.</summary>
+public readonly record struct GameState(
+    sbyte Gear,
+    byte RevLightsPercent,
+    bool DrsAllowed,
+    bool DrsOpen,
+    ushort SpeedKph,
+    ushort Rpm,
+    byte ErsPercent,
+    byte ErsMode,
+    bool PitLimiter);

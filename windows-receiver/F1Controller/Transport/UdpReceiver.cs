@@ -44,6 +44,10 @@ public sealed class UdpReceiver : IDisposable
         : 0;
     public double JitterUs => _jitterUs;
     public string? RemoteAddress { get; private set; }
+
+    // Where the phone's packets come from; telemetry is sent back here so it
+    // reuses the same socket (and NAT/firewall path) as the pongs.
+    private volatile IPEndPoint? _phoneEndPoint;
     public ControlPacket LastPacket { get; private set; }
 
     /// <summary>True while control packets keep arriving (within <see cref="LinkTimeout"/>).</summary>
@@ -108,6 +112,7 @@ public sealed class UdpReceiver : IDisposable
                 long receiveTicks = Stopwatch.GetTimestamp();
                 var data = result.Buffer;
                 RemoteAddress = result.RemoteEndPoint.Address.ToString();
+                _phoneEndPoint = result.RemoteEndPoint;
 
                 // Ping/pong: echo back immediately for RTT measurement
                 if (ControlPacket.IsPing(data) && data.Length >= ControlPacket.PingSize)
@@ -191,6 +196,21 @@ public sealed class UdpReceiver : IDisposable
             _csvWriter?.Dispose();
             _client?.Dispose();
         }
+    }
+
+    /// <summary>Sends a datagram to the phone, if one is connected. Safe to call from any thread.</summary>
+    public void SendToPhone(byte[] data)
+    {
+        var client = _client;
+        var phone = _phoneEndPoint;
+        if (client == null || phone == null || !IsReceiving)
+            return;
+        try
+        {
+            client.Send(data, data.Length, phone);
+        }
+        catch (SocketException) { }
+        catch (ObjectDisposedException) { }
     }
 
     public void Dispose()

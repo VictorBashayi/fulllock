@@ -21,6 +21,29 @@ public readonly record struct ControlPacket(
     public const uint PingMarker = 0xFFFFFFFF;
     public const int PingSize = 16; // [marker:u32][seq:u32][timestamp_us:u64]
 
+    /// <summary>
+    /// Game state sent back to the phone (16 bytes, little-endian):
+    /// [marker:u32][gear:i8][revLightsPct:u8][drsAllowed:u8][drsOpen:u8]
+    /// [speedKph:u16][rpm:u16][ersPct:u8][ersMode:u8][pitLimiter:u8][reserved:u8]
+    /// </summary>
+    public const uint GameStateMarker = 0xFFFFFFFE;
+    public const int GameStateSize = 16;
+
+    public static void WriteGameState(Span<byte> dest, in Validation.GameState s)
+    {
+        BinaryPrimitives.WriteUInt32LittleEndian(dest, GameStateMarker);
+        dest[4] = unchecked((byte)s.Gear);
+        dest[5] = s.RevLightsPercent;
+        dest[6] = s.DrsAllowed ? (byte)1 : (byte)0;
+        dest[7] = s.DrsOpen ? (byte)1 : (byte)0;
+        BinaryPrimitives.WriteUInt16LittleEndian(dest[8..], s.SpeedKph);
+        BinaryPrimitives.WriteUInt16LittleEndian(dest[10..], s.Rpm);
+        dest[12] = s.ErsPercent;
+        dest[13] = s.ErsMode;
+        dest[14] = s.PitLimiter ? (byte)1 : (byte)0;
+        dest[15] = 0;
+    }
+
     public static bool IsPing(ReadOnlySpan<byte> data)
     {
         return data.Length >= 4 && BinaryPrimitives.ReadUInt32LittleEndian(data) == PingMarker;

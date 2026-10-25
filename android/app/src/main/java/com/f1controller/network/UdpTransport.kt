@@ -25,6 +25,10 @@ import kotlin.concurrent.thread
  *
  * Pong packet: same, echoed back by receiver.
  *
+ * Game state packet (16 bytes, receiver → phone, whenever the game sends telemetry):
+ *   [0xFE 0xFF 0xFF 0xFF][gear:i8][revLightsPct:u8][drsAllowed:u8][drsOpen:u8]
+ *   [speedKph:u16][rpm:u16][ersPct:u8][ersMode:u8][pitLimiter:u8][reserved:u8]
+ *
  * UDP has no connection, so "connected" means a pong arrived within the last
  * [LINK_TIMEOUT_NS]. "active" means the send threads are running.
  */
@@ -45,6 +49,24 @@ class UdpTransport {
 
     private val _state = MutableStateFlow(TransportState())
     val state: StateFlow<TransportState> = _state
+
+    /** Player car values from the game. ersMode: 0 none, 1 medium, 2 hotlap, 3 overtake. */
+    data class GameTelemetry(
+        val gear: Int,          // -1 = R, 0 = N
+        val revLightsPct: Int,  // 0-100
+        val drsAllowed: Boolean,
+        val drsOpen: Boolean,
+        val speedKph: Int,
+        val rpm: Int,
+        val ersPct: Int,        // battery 0-100
+        val ersMode: Int,
+        val pitLimiter: Boolean,
+    )
+
+    private val _telemetry = MutableStateFlow<GameTelemetry?>(null)
+    /** Latest game telemetry, or null if none arrived in the last [TELEMETRY_TIMEOUT_NS]. */
+    val telemetry: StateFlow<GameTelemetry?> = _telemetry
+    @Volatile private var lastTelemetryNs = 0L
 
     // ---- Configuration ----
 
@@ -118,6 +140,7 @@ class UdpTransport {
         val s = session.getAndSet(null) ?: return
         s.socket.close()
         _state.value = TransportState()
+        _telemetry.value = null
     }
 
     fun isRunning(): Boolean = session.get() != null
@@ -168,6 +191,8 @@ class UdpTransport {
                     rttP99Ms = computeRttP99(),
                     pongReceived = pongCount,
                 )
+                // Game paused/closed or telemetry off: stop showing stale values
+                if (System.nanoTime() - lastTelemetryNs > TELEMETRY_TIMEOUT_NS) _telemetry.value = null
             }
 
             // Fixed-rate schedule: sleep most of the gap, spin the last ~1ms
@@ -208,9 +233,9 @@ class UdpTransport {
         }
     }
 
-    // Listen for pongs
+    // Listen for pongs and game state
     private fun receiveLoop(s: Session) {
-        val recvBuf = ByteArray(16)
+        val recvBuf = ByteArray(64)
         val recvPacket = DatagramPacket(recvBuf, recvBuf.size)
 
         while (isCurrent(s)) {
@@ -220,7 +245,14 @@ class UdpTransport {
                 if (recvPacket.length < 16) continue
 
                 val bb = ByteBuffer.wrap(recvBuf, 0, 16).order(ByteOrder.LITTLE_ENDIAN)
-                if (bb.int != PING_MARKER) continue
+                when (bb.int) {
+                    PING_MARKER -> {}
+                    GAME_STATE_MARKER -> {
+                        onGameState(bb)
+                        continue
+                    }
+                    else -> continue
+                }
                 bb.int // skip seq
                 val sentUs = bb.long
                 val nowNs = System.nanoTime()
@@ -239,6 +271,21 @@ class UdpTransport {
                 // Socket closed
             }
         }
+    }
+
+    private fun onGameState(bb: ByteBuffer) {
+        _telemetry.value = GameTelemetry(
+            gear = bb.get().toInt(),
+            revLightsPct = bb.get().toInt() and 0xFF,
+            drsAllowed = bb.get().toInt() != 0,
+            drsOpen = bb.get().toInt() != 0,
+            speedKph = bb.short.toInt() and 0xFFFF,
+            rpm = bb.short.toInt() and 0xFFFF,
+            ersPct = bb.get().toInt() and 0xFF,
+            ersMode = bb.get().toInt() and 0xFF,
+            pitLimiter = bb.get().toInt() != 0,
+        )
+        lastTelemetryNs = System.nanoTime()
     }
 
     private fun resetStats() {
@@ -292,6 +339,8 @@ class UdpTransport {
 
     companion object {
         private const val PING_MARKER = 0xFFFFFFFF.toInt()
+        private const val GAME_STATE_MARKER = 0xFFFFFFFE.toInt()
+        private const val TELEMETRY_TIMEOUT_NS = 1_500_000_000L
         private const val LINK_TIMEOUT_NS = 1_000_000_000L
     }
 }
