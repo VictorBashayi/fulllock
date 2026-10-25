@@ -20,6 +20,7 @@ import com.f1controller.network.UdpTransport
 /**
  * Settings Screen — configures connection, Madgwick AHRS, and steering parameters.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     transport: UdpTransport,

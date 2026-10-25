@@ -188,7 +188,7 @@ class MadgwickFilter {
     fun getPitchRad(): Float {
         val sinp = 2f * (q0 * q2 - q3 * q1)
         return if (kotlin.math.abs(sinp) >= 1f) {
-            kotlin.math.copySign(Math.PI.toFloat() / 2f, sinp)
+            Math.copySign(Math.PI.toFloat() / 2f, sinp)
         } else {
             kotlin.math.asin(sinp)
         }
