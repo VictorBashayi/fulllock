@@ -1,0 +1,70 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Android: build APK",
+      "type": "shell",
+      "command": ".\gradlew.bat assembleDebug",
+      "options": { "cwd": "${workspaceFolder}/android" },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: install on phone",
+      "type": "shell",
+      "command": ".\gradlew.bat installDebug",
+      "options": { "cwd": "${workspaceFolder}/android" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: install + launch",
+      "type": "shell",
+      "command": "adb shell am start -n com.f1controller/.MainActivity",
+      "dependsOn": "Android: install on phone",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: logcat (app only)",
+      "type": "shell",
+      "command": "adb logcat --pid=$(adb shell pidof -s com.f1controller)",
+      "options": { "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] } },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: pull IMU logs",
+      "type": "shell",
+      "command": "adb pull /sdcard/Android/data/com.f1controller/files/ imu-logs",
+      "problemMatcher": []
+    },
+    {
+      "label": "Receiver: build",
+      "type": "shell",
+      "command": "dotnet build",
+      "options": { "cwd": "${workspaceFolder}/windows-receiver" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Receiver: run",
+      "type": "shell",
+      "command": "dotnet run --project F1Controller -- --port 5555",
+      "options": { "cwd": "${workspaceFolder}/windows-receiver" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Receiver: run with F1 telemetry validation",
+      "type": "shell",
+      "command": "dotnet run --project F1Controller -- --port 5555 --validate --log-transport",
+      "options": { "cwd": "${workspaceFolder}/windows-receiver" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Receiver: run without ViGEm (transport test)",
+      "type": "shell",
+      "command": "dotnet run --project F1Controller -- --port 5555 --no-vigem",
+      "options": { "cwd": "${workspaceFolder}/windows-receiver" },
+      "problemMatcher": []
+    }
+  ]
+}

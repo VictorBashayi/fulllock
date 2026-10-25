@@ -14,6 +14,13 @@ namespace F1Controller.Transport;
 /// </summary>
 public sealed class UdpReceiver : IDisposable
 {
+    /// <summary>No control packet for this long → phone considered gone.</summary>
+    public static readonly TimeSpan LinkTimeout = TimeSpan.FromMilliseconds(250);
+
+    // Windows: stop ICMP "port unreachable" from surfacing as WSAECONNRESET
+    // on the next receive after a pong is sent to a phone that went away.
+    private const int SIO_UDP_CONNRESET = unchecked((int)0x9800000C);
+
     private readonly int _port;
     private readonly bool _logTransport;
     private UdpClient? _client;
@@ -22,12 +29,11 @@ public sealed class UdpReceiver : IDisposable
     // --- Metrics (read from dashboard thread) ---
     private long _packetsReceived;
     private long _packetsLost;
-    private long _lastSeq = -1;
+    private uint? _lastSeq;
     private long _totalExpected;
     private double _jitterUs;
     private long _lastArrivalTicks;
     private double _lastIntervalUs;
-    private readonly Stopwatch _sw = Stopwatch.StartNew();
 
     // RTT tracking (populated from pong responses — phone sends pings, we echo)
     // The phone computes its own RTT; we track per-packet processing latency instead.
@@ -39,10 +45,19 @@ public sealed class UdpReceiver : IDisposable
     public double JitterUs => _jitterUs;
     public string? RemoteAddress { get; private set; }
     public ControlPacket LastPacket { get; private set; }
-    public bool IsReceiving => _packetsReceived > 0;
+
+    /// <summary>True while control packets keep arriving (within <see cref="LinkTimeout"/>).</summary>
+    public bool IsReceiving
+    {
+        get
+        {
+            long last = Interlocked.Read(ref _lastArrivalTicks);
+            return last != 0 && Stopwatch.GetElapsedTime(last) < LinkTimeout;
+        }
+    }
 
     // Fires for each valid control packet
-    public event Action<ControlPacket, long>? OnPacketReceived; // packet + receive ticks
+    public event Action<ControlPacket, long>? OnPacketReceived; // packet + Stopwatch.GetTimestamp()
 
     // PPS counter
     private int _ppsCounter;
@@ -58,8 +73,8 @@ public sealed class UdpReceiver : IDisposable
     {
         _client = new UdpClient(_port);
         _client.Client.ReceiveBufferSize = 65536; // 64KB receive buffer
-        _client.Client.SetSocketOption(
-            SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+        if (OperatingSystem.IsWindows())
+            _client.Client.IOControl(SIO_UDP_CONNRESET, new byte[4], null);
 
         if (_logTransport)
         {
@@ -68,7 +83,7 @@ public sealed class UdpReceiver : IDisposable
             _csvWriter.WriteLine("timestamp,seq,jitter_us,loss_pct,pps");
         }
 
-        _ppsWindowStart = _sw.ElapsedMilliseconds;
+        _ppsWindowStart = Stopwatch.GetTimestamp();
         Console.WriteLine($"[Transport] Listening on UDP port {_port}...");
 
         try
@@ -90,7 +105,7 @@ public sealed class UdpReceiver : IDisposable
                     continue;
                 }
 
-                long receiveTicks = _sw.ElapsedTicks;
+                long receiveTicks = Stopwatch.GetTimestamp();
                 var data = result.Buffer;
                 RemoteAddress = result.RemoteEndPoint.Address.ToString();
 
@@ -103,6 +118,7 @@ public sealed class UdpReceiver : IDisposable
                             result.RemoteEndPoint, ct);
                     }
                     catch (OperationCanceledException) { break; }
+                    catch (SocketException) { }
                     continue;
                 }
 
@@ -110,15 +126,25 @@ public sealed class UdpReceiver : IDisposable
                     continue;
 
                 var packet = ControlPacket.Parse(data);
-                LastPacket = packet;
 
-                // Sequence tracking for packet loss
-                if (_lastSeq >= 0)
+                // Sequence tracking for packet loss. Signed 32-bit delta handles
+                // wrap-around; late/duplicate packets (delta <= 0) are dropped so a
+                // stale value can't overwrite newer input; a large jump means the
+                // phone reconnected and restarted its counter.
+                if (_lastSeq is uint last)
                 {
-                    long expected = packet.Sequence - (uint)_lastSeq;
-                    if (expected > 1)
-                        _packetsLost += expected - 1;
-                    _totalExpected += expected;
+                    int delta = unchecked((int)(packet.Sequence - last));
+                    if (delta <= 0 && delta > -1000)
+                        continue;
+                    if (delta > 0 && delta < 1000)
+                    {
+                        _packetsLost += delta - 1;
+                        _totalExpected += delta;
+                    }
+                    else
+                    {
+                        _totalExpected += 1; // counter reset
+                    }
                 }
                 else
                 {
@@ -126,12 +152,13 @@ public sealed class UdpReceiver : IDisposable
                 }
                 _lastSeq = packet.Sequence;
                 _packetsReceived++;
+                LastPacket = packet;
 
                 // Jitter calculation (RFC 3550 style: running average of interval deviation)
-                if (_lastArrivalTicks > 0)
+                long prevArrival = _lastArrivalTicks;
+                if (prevArrival > 0)
                 {
-                    double intervalUs = (receiveTicks - _lastArrivalTicks)
-                        * 1_000_000.0 / Stopwatch.Frequency;
+                    double intervalUs = Stopwatch.GetElapsedTime(prevArrival, receiveTicks).TotalMicroseconds;
                     double deviation = Math.Abs(intervalUs - _lastIntervalUs);
                     _jitterUs += (deviation - _jitterUs) / 16.0; // exponential smoothing
                     _lastIntervalUs = intervalUs;
@@ -140,16 +167,15 @@ public sealed class UdpReceiver : IDisposable
                 {
                     _lastIntervalUs = 4000; // assume ~4ms initial interval (250 Hz)
                 }
-                _lastArrivalTicks = receiveTicks;
+                Interlocked.Exchange(ref _lastArrivalTicks, receiveTicks);
 
                 // PPS counter
                 _ppsCounter++;
-                long now = _sw.ElapsedMilliseconds;
-                if (now - _ppsWindowStart >= 1000)
+                if (Stopwatch.GetElapsedTime(_ppsWindowStart, receiveTicks).TotalMilliseconds >= 1000)
                 {
                     PacketsPerSecond = _ppsCounter;
                     _ppsCounter = 0;
-                    _ppsWindowStart = now;
+                    _ppsWindowStart = receiveTicks;
 
                     // CSV log once per second
                     _csvWriter?.WriteLine(

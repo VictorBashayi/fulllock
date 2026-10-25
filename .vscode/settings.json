@@ -1,0 +1,12 @@
+{
+  // Gradle runs on the JDK from ~/.gradle/gradle.properties (org.gradle.java.home)
+  "java.import.gradle.enabled": false,
+  "gradle.nestedProjects": true,
+  "files.exclude": {
+    "**/build": true,
+    "**/.gradle": true,
+    "**/bin": true,
+    "**/obj": true
+  },
+  "dotnet.defaultSolution": "windows-receiver/F1Controller.sln"
+}

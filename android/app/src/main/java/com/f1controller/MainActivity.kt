@@ -8,6 +8,9 @@ import android.hardware.SensorManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Process
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -18,6 +21,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -51,6 +56,12 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private val transport = UdpTransport()
     private val steeringProcessor = SteeringProcessor()
 
+    // Sensor callbacks run here instead of the UI thread, so Compose frames
+    // can't delay steering updates.
+    private val sensorThread = HandlerThread("imu", Process.THREAD_PRIORITY_URGENT_DISPLAY)
+        .apply { start() }
+    private val sensorHandler = Handler(sensorThread.looper)
+
     private var wifiLock: WifiManager.WifiLock? = null
     private var gyroSensor: Sensor? = null
     private var accelSensor: Sensor? = null
@@ -59,6 +70,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     @Volatile private var latestGyro = FloatArray(3)
     @Volatile private var latestAccel = FloatArray(3)
     @Volatile private var latestGyroTs = 0L
+    @Volatile private var hasAccel = false
     @Volatile private var sensorListenerActive = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,7 +97,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
-        sensorLogger = SensorLogger(sensorManager)
+        sensorLogger = SensorLogger(sensorManager, sensorHandler)
+        loadSettings()
 
         gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
         accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -107,8 +120,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     override fun onResume() {
         super.onResume()
         // Register sensor listener for steering (always active when app is visible)
-        sensorManager.registerListener(this, gyroSensor, SensorManager.SENSOR_DELAY_FASTEST)
-        sensorManager.registerListener(this, accelSensor, SensorManager.SENSOR_DELAY_FASTEST)
+        sensorManager.registerListener(this, gyroSensor, SensorManager.SENSOR_DELAY_FASTEST, sensorHandler)
+        sensorManager.registerListener(this, accelSensor, SensorManager.SENSOR_DELAY_FASTEST, sensorHandler)
         sensorListenerActive = true
     }
 
@@ -117,6 +130,12 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         // Unregister steering sensor listener (the logger has its own registration)
         sensorManager.unregisterListener(this)
         sensorListenerActive = false
+        // Steering is frozen while paused; send neutral input instead of the last value
+        transport.steer = 0
+        transport.throttle = 0
+        transport.brake = 0
+        transport.buttons = 0
+        saveSettings()
     }
 
     override fun onDestroy() {
@@ -124,6 +143,35 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         sensorLogger.stopRecording()
         transport.disconnect()
         releaseWifiLock()
+        sensorThread.quitSafely()
+    }
+
+    // ---- Settings persistence ----
+
+    private fun loadSettings() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        transport.serverIp = prefs.getString("server_ip", transport.serverIp) ?: transport.serverIp
+        transport.serverPort = prefs.getInt("server_port", transport.serverPort)
+        steeringProcessor.madgwick.beta = prefs.getFloat("beta", steeringProcessor.madgwick.beta)
+        steeringProcessor.lockAngleDeg = prefs.getFloat("lock_angle", steeringProcessor.lockAngleDeg)
+        steeringProcessor.deadzoneDeg = prefs.getFloat("deadzone", steeringProcessor.deadzoneDeg)
+        steeringProcessor.centerOffsetRad = prefs.getFloat("center_offset", steeringProcessor.centerOffsetRad)
+        prefs.getString("axis", null)?.let { name ->
+            SteeringProcessor.SteeringAxis.entries.firstOrNull { it.name == name }
+                ?.let { steeringProcessor.steeringAxis = it }
+        }
+    }
+
+    private fun saveSettings() {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putString("server_ip", transport.serverIp)
+            .putInt("server_port", transport.serverPort)
+            .putFloat("beta", steeringProcessor.madgwick.beta)
+            .putFloat("lock_angle", steeringProcessor.lockAngleDeg)
+            .putFloat("deadzone", steeringProcessor.deadzoneDeg)
+            .putFloat("center_offset", steeringProcessor.centerOffsetRad)
+            .putString("axis", steeringProcessor.steeringAxis.name)
+            .apply()
     }
 
     // ---- SensorEventListener for steering (always-on, separate from logger) ----
@@ -133,6 +181,9 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             Sensor.TYPE_GYROSCOPE -> {
                 latestGyro = event.values.copyOf()
                 latestGyroTs = event.timestamp
+
+                // The filter seeds itself from the first accel reading; wait for one
+                if (!hasAccel) return
 
                 // Process steering on the gyro event (it's the higher-priority axis)
                 val steer = steeringProcessor.process(
@@ -145,6 +196,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             }
             Sensor.TYPE_ACCELEROMETER -> {
                 latestAccel = event.values.copyOf()
+                hasAccel = true
             }
         }
     }
@@ -168,6 +220,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             if (it.isHeld) it.release()
         }
         wifiLock = null
+    }
+
+    private companion object {
+        const val PREFS_NAME = "f1controller"
     }
 }
 

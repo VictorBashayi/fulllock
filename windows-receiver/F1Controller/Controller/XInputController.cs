@@ -14,7 +14,7 @@ public sealed class XInputController : IDisposable
 {
     private readonly ViGEmClient _vigemClient;
     private readonly IXbox360Controller _controller;
-    private readonly Stopwatch _sw = Stopwatch.StartNew();
+    private readonly object _submitLock = new();
 
     /// <summary>Last measured time from packet-receive to XInput report submission, in microseconds.</summary>
     public double SubmitLatencyUs { get; private set; }
@@ -28,6 +28,9 @@ public sealed class XInputController : IDisposable
     {
         _vigemClient = new ViGEmClient();
         _controller = _vigemClient.CreateXbox360Controller();
+        // Default is to submit a report on every Set* call (~20 IRPs per packet).
+        // Batch them and submit once.
+        _controller.AutoSubmitReport = false;
     }
 
     /// <summary>Plug in the virtual controller. Must be called before Submit.</summary>
@@ -43,11 +46,23 @@ public sealed class XInputController : IDisposable
     /// Called on every packet arrival (~250 Hz).
     /// </summary>
     /// <param name="packet">Parsed control packet from the phone.</param>
-    /// <param name="receiveTicks">Stopwatch ticks of when the UDP packet arrived.</param>
+    /// <param name="receiveTicks">Stopwatch.GetTimestamp() of when the UDP packet arrived.</param>
     public void Submit(Transport.ControlPacket packet, long receiveTicks)
     {
         if (!IsConnected) return;
 
+        // Called from the receive loop and the failsafe timer
+        lock (_submitLock)
+        {
+            SubmitLocked(packet, receiveTicks);
+        }
+    }
+
+    /// <summary>Centre the stick, release triggers and buttons.</summary>
+    public void SubmitNeutral() => Submit(default, Stopwatch.GetTimestamp());
+
+    private void SubmitLocked(Transport.ControlPacket packet, long receiveTicks)
+    {
         _controller.SetAxisValue(Xbox360Axis.LeftThumbX, packet.Steer);
 
         // Keep Y axes centered so games don't see phantom input
@@ -77,7 +92,9 @@ public sealed class XInputController : IDisposable
         _controller.SubmitReport();
 
         // Measure submission latency
-        long nowTicks = _sw.ElapsedTicks;
+        // Both timestamps from Stopwatch.GetTimestamp(); previously each class had
+        // its own Stopwatch, which made this difference meaningless.
+        long nowTicks = Stopwatch.GetTimestamp();
         SubmitLatencyUs = (nowTicks - receiveTicks) * 1_000_000.0 / Stopwatch.Frequency;
         ReportsSubmitted++;
     }

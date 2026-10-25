@@ -146,17 +146,17 @@ class MadgwickFilter {
         val nay = ay / norm
         val naz = az / norm
 
-        // Quaternion that rotates [0,0,1] (expected gravity in device frame)
-        // to the measured gravity vector
+        // Quaternion whose predicted gravity direction (see gravityX/Y/Z)
+        // equals the measured one, so the filter starts converged.
         if (naz >= 0f) {
             val s = sqrt(2f * (1f + naz))
             q0 = s / 2f
-            q1 = -nay / s
-            q2 = nax / s
+            q1 = nay / s
+            q2 = -nax / s
             q3 = 0f
         } else {
             val s = sqrt(2f * (1f - naz))
-            q0 = -nay / s
+            q0 = nay / s
             q1 = s / 2f
             q2 = 0f
             q3 = nax / s
@@ -168,6 +168,12 @@ class MadgwickFilter {
         q0 = 1f; q1 = 0f; q2 = 0f; q3 = 0f
         initialized = false
     }
+
+    // ---- Estimated gravity ("up" as the accelerometer sees it) in device frame ----
+
+    fun gravityX(): Float = 2f * (q1 * q3 - q0 * q2)
+    fun gravityY(): Float = 2f * (q0 * q1 + q2 * q3)
+    fun gravityZ(): Float = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3
 
     // ---- Euler angle extraction (intrinsic ZYX / Tait-Bryan) ----
 

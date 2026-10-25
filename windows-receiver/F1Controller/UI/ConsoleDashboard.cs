@@ -29,15 +29,18 @@ public sealed class ConsoleDashboard
     {
         var pkt = _receiver.LastPacket;
         bool connected = _receiver.IsReceiving;
-        string status = connected ? "Connected" : "Waiting for phone...";
+        string status = connected ? "Connected"
+            : _receiver.RemoteAddress != null ? "Signal lost — inputs released"
+            : "Waiting for phone...";
         string phoneIp = _receiver.RemoteAddress ?? "—";
+        if (!connected) pkt = default;
 
-        // Convert steer i16 to degrees (assuming ±90° lock = ±32768)
-        double steerDeg = pkt.Steer * 90.0 / 32768.0;
+        // Steering as % of full lock (lock angle is configured on the phone)
+        double steerPct = pkt.Steer * 100.0 / 32767.0;
         double throttlePct = pkt.Throttle * 100.0 / 255.0;
         double brakePct = pkt.Brake * 100.0 / 255.0;
 
-        string steerBar = BuildBar(Math.Abs(steerDeg) / 90.0, 16, steerDeg < 0);
+        string steerBar = BuildBar(Math.Abs(steerPct) / 100.0, 8, steerPct < 0);
         string throttleBar = BuildFillBar(throttlePct / 100.0, 14);
         string brakeBar = BuildFillBar(brakePct / 100.0, 14);
 
@@ -53,13 +56,13 @@ public sealed class ConsoleDashboard
         _sb.AppendLine("╠═══════════════════════════════════════════════╣");
         _sb.AppendLine($"║  Status:       {Pad(status, 30)} ║");
         _sb.AppendLine($"║  Phone IP:     {Pad(phoneIp, 30)} ║");
-        _sb.AppendLine($"║  Packets/sec:  {Pad(_receiver.PacketsPerSecond.ToString(), 30)} ║");
+        _sb.AppendLine($"║  Packets/sec:  {Pad((connected ? _receiver.PacketsPerSecond : 0).ToString(), 30)} ║");
         _sb.AppendLine($"║  Packet loss:  {Pad($"{_receiver.PacketLossPercent:F2}%", 30)} ║");
         _sb.AppendLine($"║  Jitter:       {Pad($"{_receiver.JitterUs:F1} µs", 30)} ║");
         _sb.AppendLine("╠═══════════════════════════════════════════════╣");
-        _sb.AppendLine($"║  Steer:     {steerBar}  {(steerDeg >= 0 ? "+" : "")}{steerDeg:F1}°{Pad("", 30 - steerBar.Length - 7)}║");
-        _sb.AppendLine($"║  Throttle:  {throttleBar}  {throttlePct:F0}%{Pad("", 30 - throttleBar.Length - 5)}║");
-        _sb.AppendLine($"║  Brake:     {brakeBar}  {brakePct:F0}%{Pad("", 30 - brakeBar.Length - 5)}║");
+        _sb.AppendLine($"║  Steer:     {Pad($"{steerBar}  {steerPct,6:+0.0;-0.0;0.0}%", 34)}║");
+        _sb.AppendLine($"║  Throttle:  {Pad($"{throttleBar}  {throttlePct,3:F0}%", 34)}║");
+        _sb.AppendLine($"║  Brake:     {Pad($"{brakeBar}  {brakePct,3:F0}%", 34)}║");
         _sb.AppendLine("╠═══════════════════════════════════════════════╣");
         _sb.AppendLine($"║  ViGEm:        {Pad(vigemStatus, 30)} ║");
         _sb.AppendLine($"║  Submit lat:   {Pad($"{submitLatMs:F3} ms", 30)} ║");
@@ -94,6 +97,18 @@ public sealed class ConsoleDashboard
                 Console.WriteLine(new string(' ', 50));
         }
         _lastHeight = currentHeight;
+    }
+
+    /// <summary>Compact single-line status for non-interactive output.</summary>
+    public void WriteStatusLine()
+    {
+        bool connected = _receiver.IsReceiving;
+        var pkt = connected ? _receiver.LastPacket : default;
+        Console.WriteLine(
+            $"[{DateTime.Now:HH:mm:ss}] {(connected ? "connected" : "waiting")} " +
+            $"pps={(connected ? _receiver.PacketsPerSecond : 0)} loss={_receiver.PacketLossPercent:F2}% " +
+            $"jitter={_receiver.JitterUs:F0}us steer={pkt.Steer} thr={pkt.Throttle} brk={pkt.Brake} " +
+            $"btn=0x{pkt.Buttons:X4} submit={(_xinput?.SubmitLatencyUs ?? 0):F0}us");
     }
 
     private static string Pad(string s, int width)

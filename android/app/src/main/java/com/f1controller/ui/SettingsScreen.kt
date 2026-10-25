@@ -28,7 +28,7 @@ fun SettingsScreen(
     var serverIp by remember { mutableStateOf(transport.serverIp) }
     var serverPort by remember { mutableStateOf(transport.serverPort.toString()) }
     var beta by remember { mutableFloatStateOf(steeringProcessor.madgwick.beta) }
-    var isYaw by remember { mutableStateOf(steeringProcessor.steeringAxis == SteeringProcessor.SteeringAxis.YAW) }
+    var axis by remember { mutableStateOf(steeringProcessor.steeringAxis) }
     var lockAngle by remember { mutableFloatStateOf(steeringProcessor.lockAngleDeg) }
     var deadzone by remember { mutableFloatStateOf(steeringProcessor.deadzoneDeg) }
 
@@ -83,16 +83,29 @@ fun SettingsScreen(
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (tState.isConnected)
+                        containerColor = if (tState.isActive)
                             MaterialTheme.colorScheme.error
                         else
                             MaterialTheme.colorScheme.secondary
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text(if (tState.isConnected) "Disconnect" else "Connect")
+                    Text(if (tState.isActive) "Disconnect" else "Connect")
                 }
             }
+            val status = when {
+                tState.error != null -> tState.error!!
+                tState.isConnected -> "Receiver responding"
+                tState.isActive -> "Sending — no reply from receiver yet"
+                else -> "Idle"
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                status,
+                fontSize = 12.sp,
+                color = if (tState.error != null) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         // ---- Madgwick AHRS Settings ----
@@ -126,23 +139,24 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text("Steering axis:", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-                FilterChip(
-                    selected = !isYaw,
-                    onClick = {
-                        isYaw = false
-                        steeringProcessor.steeringAxis = SteeringProcessor.SteeringAxis.ROLL
-                    },
-                    label = { Text("Roll") }
-                )
-                FilterChip(
-                    selected = isYaw,
-                    onClick = {
-                        isYaw = true
-                        steeringProcessor.steeringAxis = SteeringProcessor.SteeringAxis.YAW
-                    },
-                    label = { Text("Yaw") }
-                )
+                SteeringProcessor.SteeringAxis.entries.forEach { option ->
+                    FilterChip(
+                        selected = axis == option,
+                        onClick = {
+                            axis = option
+                            steeringProcessor.steeringAxis = option
+                            // Old center was measured on a different axis
+                            steeringProcessor.centerOffsetRad = 0f
+                        },
+                        label = { Text(option.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                    )
+                }
             }
+            Text(
+                "Tilt = turn the phone like a wheel (recommended). Roll/Yaw are raw Euler angles.",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 

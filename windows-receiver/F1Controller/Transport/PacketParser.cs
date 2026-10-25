@@ -42,22 +42,21 @@ public readonly record struct ControlPacket(
     }
 
     /// <summary>
-    /// Decode button bitfield into Xbox button flags.
-    /// Bit layout: 0=A, 1=B, 2=X, 3=Y, 4=LB, 5=RB, 6=Start, 7=Back,
-    ///             8=LThumb, 9=RThumb, 10=DUp, 11=DDown, 12=DLeft, 13=DRight
+    /// Button bitfield uses the XInput XUSB_GAMEPAD wButtons layout, same as
+    /// the phone sends (see ControllerScreen.kt), so no translation is needed.
     /// </summary>
-    public bool ButtonA     => (Buttons & (1 << 0)) != 0;
-    public bool ButtonB     => (Buttons & (1 << 1)) != 0;
-    public bool ButtonX     => (Buttons & (1 << 2)) != 0;
-    public bool ButtonY     => (Buttons & (1 << 3)) != 0;
-    public bool ButtonLB    => (Buttons & (1 << 4)) != 0;
-    public bool ButtonRB    => (Buttons & (1 << 5)) != 0;
-    public bool ButtonStart => (Buttons & (1 << 6)) != 0;
-    public bool ButtonBack  => (Buttons & (1 << 7)) != 0;
-    public bool ButtonLT    => (Buttons & (1 << 8)) != 0;
-    public bool ButtonRT    => (Buttons & (1 << 9)) != 0;
-    public bool DPadUp      => (Buttons & (1 << 10)) != 0;
-    public bool DPadDown    => (Buttons & (1 << 11)) != 0;
-    public bool DPadLeft    => (Buttons & (1 << 12)) != 0;
-    public bool DPadRight   => (Buttons & (1 << 13)) != 0;
+    public bool DPadUp      => (Buttons & 0x0001) != 0;
+    public bool DPadDown    => (Buttons & 0x0002) != 0;
+    public bool DPadLeft    => (Buttons & 0x0004) != 0;
+    public bool DPadRight   => (Buttons & 0x0008) != 0;
+    public bool ButtonStart => (Buttons & 0x0010) != 0;
+    public bool ButtonBack  => (Buttons & 0x0020) != 0;
+    public bool ButtonLT    => (Buttons & 0x0040) != 0; // left thumbstick click
+    public bool ButtonRT    => (Buttons & 0x0080) != 0; // right thumbstick click
+    public bool ButtonLB    => (Buttons & 0x0100) != 0;
+    public bool ButtonRB    => (Buttons & 0x0200) != 0;
+    public bool ButtonA     => (Buttons & 0x1000) != 0;
+    public bool ButtonB     => (Buttons & 0x2000) != 0;
+    public bool ButtonX     => (Buttons & 0x4000) != 0;
+    public bool ButtonY     => (Buttons & 0x8000) != 0;
 }

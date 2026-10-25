@@ -4,7 +4,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.os.Environment
+import android.os.Handler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.BufferedWriter
@@ -26,7 +26,11 @@ import java.util.concurrent.atomic.AtomicLong
  * The sample rate displayed is derived from inter-event deltas so it reflects
  * the sensor HAL's actual delivery rate, not the requested rate.
  */
-class SensorLogger(private val sensorManager: SensorManager) : SensorEventListener {
+class SensorLogger(
+    private val sensorManager: SensorManager,
+    /** Sensor callbacks (and all CSV writes) run on this handler's thread. */
+    private val handler: Handler,
+) : SensorEventListener {
 
     data class LoggerState(
         val isRecording: Boolean = false,
@@ -93,10 +97,10 @@ class SensorLogger(private val sensorManager: SensorManager) : SensorEventListen
         sampleCount.set(0L)
 
         sensorManager.registerListener(
-            this, gyroSensor, SensorManager.SENSOR_DELAY_FASTEST
+            this, gyroSensor, SensorManager.SENSOR_DELAY_FASTEST, handler
         )
         sensorManager.registerListener(
-            this, accelSensor, SensorManager.SENSOR_DELAY_FASTEST
+            this, accelSensor, SensorManager.SENSOR_DELAY_FASTEST, handler
         )
 
         _state.value = _state.value.copy(
@@ -109,9 +113,15 @@ class SensorLogger(private val sensorManager: SensorManager) : SensorEventListen
     fun stopRecording() {
         if (!isRecording.getAndSet(false)) return
         sensorManager.unregisterListener(this)
-        writer?.flush()
-        writer?.close()
+        // Close on the sensor thread so it can't race an in-flight write.
+        val w = writer
         writer = null
+        handler.post {
+            try {
+                w?.flush()
+                w?.close()
+            } catch (_: Exception) {}
+        }
         _state.value = _state.value.copy(isRecording = false)
     }
 
@@ -162,9 +172,13 @@ class SensorLogger(private val sensorManager: SensorManager) : SensorEventListen
         val a = pendingAccel ?: FloatArray(3) // zeros if accel not yet received
         val ts = pendingTimestampNs
 
-        writer?.write(
-            "$ts,${g[0]},${g[1]},${g[2]},${a[0]},${a[1]},${a[2]}\n"
-        )
+        try {
+            writer?.write(
+                "$ts,${g[0]},${g[1]},${g[2]},${a[0]},${a[1]},${a[2]}\n"
+            )
+        } catch (_: java.io.IOException) {
+            // Storage full or closed mid-stop; drop the row rather than crash
+        }
     }
 
     /** Store timestamp at circular position and compute the rate estimate. */

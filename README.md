@@ -53,7 +53,7 @@ All fields little-endian. Fixed 18 bytes, no framing overhead.
 Offset  Size  Type    Field         Range / Notes
 ──────  ────  ──────  ────────────  ─────────────────────────────────
 0       4     u32     seq           Monotonic sequence number
-4       8     u64     timestamp_us  Microseconds since epoch (phone clock)
+4       8     u64     timestamp_us  Phone monotonic clock (System.nanoTime / 1000)
 12      2     i16     steer         -32768 … +32767 (left … right)
 14      1     u8      throttle      0 … 255
 15      1     u8      brake         0 … 255
@@ -64,19 +64,29 @@ Total: 18 bytes
 
 ### Button Bitfield (u16)
 
-| Bit | Button       | Xbox Mapping     |
-|-----|-------------|------------------|
-| 0   | Gear Up     | A                |
-| 1   | Gear Down   | B                |
-| 2   | DRS         | X                |
-| 3   | ERS         | Y                |
-| 4   | Clutch      | Left Bumper      |
-| 5   | Handbrake   | Right Bumper     |
-| 6   | Look Left   | Left Stick Click |
-| 7   | Look Right  | Right Stick Click|
-| 8   | Pause       | Start            |
-| 9   | Reset Car   | Back             |
-| 10–15 | Reserved  | —                |
+Uses the XInput `XUSB_GAMEPAD.wButtons` layout directly, so neither side translates.
+
+| Mask   | Xbox Button        | Phone button |
+|--------|--------------------|--------------|
+| 0x0001 | D-pad Up           | —            |
+| 0x0002 | D-pad Down         | —            |
+| 0x0004 | D-pad Left         | —            |
+| 0x0008 | D-pad Right        | —            |
+| 0x0010 | Start              | MENU         |
+| 0x0020 | Back               | MFD          |
+| 0x0040 | Left Stick Click   | —            |
+| 0x0080 | Right Stick Click  | —            |
+| 0x0100 | Left Bumper        | GEAR ↓       |
+| 0x0200 | Right Bumper       | GEAR ↑       |
+| 0x1000 | A                  | A            |
+| 0x2000 | B                  | B            |
+| 0x4000 | X                  | DRS          |
+| 0x8000 | Y                  | ERS          |
+
+### Ping / Pong (16 bytes)
+
+`[0xFFFFFFFF:u32][seq:u32][timestamp_us:u64]` — phone sends 10 Hz, receiver echoes it
+back unchanged; the phone computes RTT from the echoed timestamp.
 
 ## Phases
 
@@ -143,12 +153,18 @@ Telemetry receiver reads Codemasters F1 UDP telemetry (port 20777) and correlate
 
 | Tool                | Version   | Purpose                                    |
 |--------------------|-----------|--------------------------------------------|
-| Android Studio     | 2024.1+   | Build Phase 0–2 Android apps               |
-| JDK                | 17+       | Android build toolchain                    |
-| .NET SDK           | 8.0+      | Build Phase 1, 3, 4 Windows receivers      |
+| VS Code            | any       | Editor (see `.vscode/` for tasks + extensions) |
+| Android SDK        | platform 35 | Android build (Gradle auto-installs missing parts) |
+| JDK                | 17 or 21  | Gradle 8.9 can't run on JDK 23+ (Android Studio's JBR 25 won't work) |
+| .NET SDK           | 8.0+      | Windows receiver                           |
 | ViGEmBus Driver    | 1.22+     | Virtual Xbox controller kernel driver      |
-| ADB                | Latest    | USB connection / port forwarding           |
-| Python 3           | 3.10+     | Phase 4 analysis scripts (optional)        |
+| ADB                | Latest    | Install the app over USB                   |
+
+Point Gradle at the JDK in `~/.gradle/gradle.properties` (machine-specific, not in the repo):
+
+```properties
+org.gradle.java.home=C:/path/to/jdk-21
+```
 
 ### ViGEmBus Installation
 
@@ -158,16 +174,19 @@ Telemetry receiver reads Codemasters F1 UDP telemetry (port 20777) and correlate
 
 ## Building
 
+From VS Code: **Terminal → Run Task…** and pick one of the tasks in `.vscode/tasks.json`
+(Android build/install/launch/logcat, receiver build/run). Or from a terminal:
+
 ```bash
-# Phase 0–2 (Android): Open in Android Studio, build via Gradle
-# Phase 1 receiver:
-cd phase1-transport/receiver && dotnet build
+# Android app (phone connected with USB debugging on)
+cd android
+./gradlew.bat assembleDebug        # build APK → app/build/outputs/apk/debug/
+./gradlew.bat installDebug         # build + install to phone
 
-# Phase 3:
-cd phase3-vigem-controller && dotnet build
-
-# Phase 4:
-cd phase4-validation && dotnet build
+# Windows receiver (all phases 1, 3, 4)
+cd windows-receiver
+dotnet build
+dotnet run --project F1Controller -- --port 5555
 ```
 
 ## License

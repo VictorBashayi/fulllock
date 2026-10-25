@@ -1,7 +1,9 @@
 package com.f1controller.input
 
 import com.f1controller.sensor.MadgwickFilter
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.max
 import kotlin.math.min
 
@@ -16,12 +18,20 @@ import kotlin.math.min
  */
 class SteeringProcessor {
 
-    enum class SteeringAxis { ROLL, YAW }
+    /**
+     * TILT: rotation about the screen normal, measured from the gravity direction
+     *       projected onto the screen plane. This is the "hold it like a wheel"
+     *       motion and works at any screen pitch. Assumes the fixed landscape
+     *       orientation from the manifest (device +X points up).
+     * ROLL / YAW: raw Euler angles. ROLL gimbal-locks when the phone is held
+     *       upright in landscape; YAW drifts (no magnetometer).
+     */
+    enum class SteeringAxis { TILT, ROLL, YAW }
 
     val madgwick = MadgwickFilter()
 
     /** Which Euler angle to use as steering input. */
-    @Volatile var steeringAxis: SteeringAxis = SteeringAxis.ROLL
+    @Volatile var steeringAxis: SteeringAxis = SteeringAxis.TILT
 
     /** Half the lock-to-lock range in degrees. At this angle, output saturates at ±32767. */
     @Volatile var lockAngleDeg: Float = 90f
@@ -52,13 +62,10 @@ class SteeringProcessor {
         madgwick.update(gx, gy, gz, ax, ay, az, timestampNs)
 
         // Step 2: Extract the selected Euler angle (radians)
-        val rawAngleRad = when (steeringAxis) {
-            SteeringAxis.ROLL -> madgwick.getRollRad()
-            SteeringAxis.YAW  -> madgwick.getYawRad()
-        }
+        val rawAngleRad = rawAngle()
 
-        // Step 3: Subtract center offset
-        val centeredRad = rawAngleRad - centerOffsetRad
+        // Step 3: Subtract center offset (wrapped so crossing ±180° doesn't jump)
+        val centeredRad = wrapPi(rawAngleRad - centerOffsetRad)
         val centeredDeg = Math.toDegrees(centeredRad.toDouble()).toFloat()
 
         // Step 4: Apply deadzone
@@ -84,10 +91,20 @@ class SteeringProcessor {
 
     /** Capture the current orientation as the new zero-center. */
     fun calibrateCenter() {
-        centerOffsetRad = when (steeringAxis) {
-            SteeringAxis.ROLL -> madgwick.getRollRad()
-            SteeringAxis.YAW  -> madgwick.getYawRad()
-        }
+        centerOffsetRad = rawAngle()
+    }
+
+    private fun rawAngle(): Float = when (steeringAxis) {
+        SteeringAxis.TILT -> atan2(madgwick.gravityY(), madgwick.gravityX())
+        SteeringAxis.ROLL -> madgwick.getRollRad()
+        SteeringAxis.YAW  -> madgwick.getYawRad()
+    }
+
+    private fun wrapPi(rad: Float): Float {
+        var r = rad
+        while (r > PI) r -= (2 * PI).toFloat()
+        while (r < -PI) r += (2 * PI).toFloat()
+        return r
     }
 
     /** Reset filter and calibration. */

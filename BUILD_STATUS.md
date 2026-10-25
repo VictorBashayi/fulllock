@@ -1,7 +1,38 @@
 # Build Status — F1 Phone Controller
 
 **Built:** 2026-10-21  
-**Status:** ✅ Complete — all phases implemented
+**Reviewed & fixed:** 2026-10-25  
+**Status:** Code complete; both halves compile. Hardware testing (Phase 0–4 steps below) not started.
+
+---
+
+## Review Fixes (2026-10-25)
+
+The original code had never been compiled. Review + first build found:
+
+**Would not build**
+- `MainActivity.kt` used `dp`/`sp` without importing them.
+- Manifest referenced `@mipmap/ic_launcher`, which didn't exist → added adaptive icon.
+- Gradle 8.2 can't run on Android Studio's bundled JDK 25 → moved to Gradle 8.9 / AGP 8.7.3 / Kotlin 2.0.21 on JDK 21; generated the missing wrapper jar.
+- `Nefarius.ViGEm.Client 1.22.0` doesn't exist → 1.21.256; added `nuget.config`.
+- `TelemetryReceiver` used a `Span` inside an async method (not allowed in C# 12).
+
+**Would build but misbehave**
+- Button bits disagreed between phone (XUSB flags) and receiver (bit 0 = A …) — every button mapped wrong. Both now use XUSB flags.
+- Phone buttons stuck "pressed" after release (pointer handler restarted mid-press), and multi-touch dropped buttons.
+- Pedals ignored a press until the finger moved past touch slop.
+- Default steering axis (Euler roll) gimbal-locks when the phone is held upright in landscape. Added **Tilt** (gravity angle in the screen plane) as the default.
+- Madgwick seeding from the first accel sample had flipped X/Y signs.
+- Receiver failsafe: if the phone stopped sending, the virtual pad held the last throttle/steer forever. Now releases after 250 ms.
+- ViGEm `AutoSubmitReport` was on → ~20 kernel submits per packet instead of one.
+- Submit-latency metric subtracted timestamps from two different stopwatches.
+- Packet-loss counter exploded on a reordered packet or phone reconnect (unsigned wrap).
+- F1 23/24 telemetry header offsets were off by one (read packetVersion as packetId) → validation never got data.
+- Invalid server IP crashed the app (uncaught exception in sender thread); fast reconnect could leave duplicate sender threads.
+- "Connected" was shown as soon as sending started; it now means pongs are arriving.
+- Send-rate display was capped at 64 Hz by its own buffer size.
+- Sensor fusion ran on the UI thread; moved to a dedicated high-priority thread.
+- Settings (IP, port, tuning, center) weren't saved between launches.
 
 ---
 
@@ -88,12 +119,10 @@ These are **additive features** — valuable for a shipped product, but prematur
 
 ### 1. Build and Deploy
 ```bash
-# Android: Open android/ in Android Studio, build to phone
-# Windows: Requires .NET 8 SDK
-cd windows-receiver/F1Controller
-dotnet restore
-dotnet build
-dotnet run --port 5555
+# In VS Code: Terminal → Run Task… → "Android: install + launch" / "Receiver: run"
+# Or manually:
+cd android && ./gradlew.bat installDebug      # phone on USB with debugging enabled
+cd windows-receiver && dotnet run --project F1Controller -- --port 5555
 ```
 
 ### 2. Hardware Setup

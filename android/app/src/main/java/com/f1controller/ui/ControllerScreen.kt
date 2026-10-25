@@ -2,7 +2,9 @@ package com.f1controller.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.f1controller.network.UdpTransport
+import kotlinx.coroutines.delay
 
 /**
  * Controller Screen (Phase 1 + 2)
@@ -46,17 +49,33 @@ fun ControllerScreen(
     onSteeringAngleDisplay: () -> Float,
 ) {
     val tState by transport.state.collectAsState()
-    val haptic = LocalHapticFeedback.current
 
     var throttleVal by remember { mutableFloatStateOf(0f) }
     var brakeVal by remember { mutableFloatStateOf(0f) }
     var buttonMask by remember { mutableIntStateOf(0) }
 
-    // Sync pedal & button values to transport
-    LaunchedEffect(throttleVal, brakeVal, buttonMask) {
-        transport.throttle = (throttleVal * 255f).toInt()
-        transport.brake = (brakeVal * 255f).toInt()
+    // The steering angle isn't Compose state; sample it at ~30 Hz for display
+    val angle by produceState(0f) {
+        while (true) {
+            value = onSteeringAngleDisplay()
+            delay(33)
+        }
+    }
+
+    // Inputs are written to the transport straight from the touch callbacks
+    // (not via a LaunchedEffect) so they go out on the next 4 ms packet.
+    val onButton: (Int, Boolean) -> Unit = { bit, pressed ->
+        buttonMask = if (pressed) buttonMask or bit else buttonMask and bit.inv()
         transport.buttons = buttonMask
+    }
+
+    // Release everything if the screen leaves composition mid-press
+    DisposableEffect(Unit) {
+        onDispose {
+            transport.throttle = 0
+            transport.brake = 0
+            transport.buttons = 0
+        }
     }
 
     Box(
@@ -67,7 +86,7 @@ fun ControllerScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // ---- Top Status Bar ----
-            StatusBar(tState, transport, onSteeringAngleDisplay)
+            StatusBar(tState, angle)
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -83,22 +102,28 @@ fun ControllerScreen(
                 VerticalPedal(
                     label = "BRAKE",
                     value = brakeVal,
-                    onValueChanged = { brakeVal = it },
+                    onValueChanged = {
+                        brakeVal = it
+                        transport.brake = (it * 255f).toInt()
+                    },
                     color = Color(0xFFE10600)
                 )
 
                 // Center: Steering vis + Buttons
                 CenterPanel(
-                    onSteeringAngleDisplay = onSteeringAngleDisplay,
+                    angle = angle,
                     buttonMask = buttonMask,
-                    onButtonChanged = { buttonMask = it },
+                    onButton = onButton,
                 )
 
                 // Right Pedal: Throttle
                 VerticalPedal(
                     label = "THROTTLE",
                     value = throttleVal,
-                    onValueChanged = { throttleVal = it },
+                    onValueChanged = {
+                        throttleVal = it
+                        transport.throttle = (it * 255f).toInt()
+                    },
                     color = Color(0xFF00D95F)
                 )
             }
@@ -109,8 +134,7 @@ fun ControllerScreen(
 @Composable
 private fun StatusBar(
     tState: UdpTransport.TransportState,
-    transport: UdpTransport,
-    onSteeringAngleDisplay: () -> Float,
+    angle: Float,
 ) {
     Row(
         modifier = Modifier
@@ -149,7 +173,7 @@ private fun StatusBar(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp
             )
-            val angle = onSteeringAngleDisplay()
+
             Text(
                 text = "Steer: ${angle.toInt()}°",
                 color = MaterialTheme.colorScheme.primary,
@@ -162,9 +186,9 @@ private fun StatusBar(
 
 @Composable
 private fun RowScope.CenterPanel(
-    onSteeringAngleDisplay: () -> Float,
+    angle: Float,
     buttonMask: Int,
-    onButtonChanged: (Int) -> Unit,
+    onButton: (bit: Int, pressed: Boolean) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -183,7 +207,7 @@ private fun RowScope.CenterPanel(
                 .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            val angle = onSteeringAngleDisplay()
+
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
                     Icons.Default.Refresh,
@@ -213,17 +237,17 @@ private fun RowScope.CenterPanel(
         ) {
             // Row 1: Gear buttons + DRS/ERS
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                F1Button("GEAR ↓", 0x0100, buttonMask, onButtonChanged)  // LEFT_SHOULDER
-                F1Button("GEAR ↑", 0x0200, buttonMask, onButtonChanged)  // RIGHT_SHOULDER
-                F1Button("DRS",    0x4000, buttonMask, onButtonChanged)  // X
-                F1Button("ERS",    0x8000, buttonMask, onButtonChanged)  // Y
+                F1Button("GEAR ↓", 0x0100, buttonMask, onButton)  // LEFT_SHOULDER
+                F1Button("GEAR ↑", 0x0200, buttonMask, onButton)  // RIGHT_SHOULDER
+                F1Button("DRS",    0x4000, buttonMask, onButton)  // X
+                F1Button("ERS",    0x8000, buttonMask, onButton)  // Y
             }
             // Row 2: A / B / Start / Back
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                F1Button("A",      0x1000, buttonMask, onButtonChanged)  // A
-                F1Button("B",      0x2000, buttonMask, onButtonChanged)  // B
-                F1Button("MENU",   0x0010, buttonMask, onButtonChanged)  // START
-                F1Button("MFD",    0x0020, buttonMask, onButtonChanged)  // BACK
+                F1Button("A",      0x1000, buttonMask, onButton)  // A
+                F1Button("B",      0x2000, buttonMask, onButton)  // B
+                F1Button("MENU",   0x0010, buttonMask, onButton)  // START
+                F1Button("MFD",    0x0020, buttonMask, onButton)  // BACK
             }
         }
     }
@@ -240,6 +264,8 @@ fun VerticalPedal(
     onValueChanged: (Float) -> Unit,
     color: Color
 ) {
+    val currentOnValueChanged by rememberUpdatedState(onValueChanged)
+
     Box(
         modifier = Modifier
             .width(80.dp)
@@ -248,18 +274,21 @@ fun VerticalPedal(
             .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
             .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        val v = 1f - (offset.y / size.height).coerceIn(0f, 1f)
-                        onValueChanged(v)
-                    },
-                    onDrag = { change, _ ->
-                        val v = 1f - (change.position.y / size.height).coerceIn(0f, 1f)
-                        onValueChanged(v)
-                    },
-                    onDragEnd = { onValueChanged(0f) },
-                    onDragCancel = { onValueChanged(0f) }
-                )
+                // Raw down/move/up rather than detectDragGestures: a drag only
+                // starts after touch slop, so a plain press wouldn't register.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    fun toValue(y: Float) = 1f - (y / size.height).coerceIn(0f, 1f)
+                    currentOnValueChanged(toValue(down.position.y))
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        currentOnValueChanged(toValue(change.position.y))
+                        change.consume()
+                    }
+                    currentOnValueChanged(0f)
+                }
             },
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -309,28 +338,26 @@ fun F1Button(
     label: String,
     bit: Int,
     currentMask: Int,
-    onMaskChanged: (Int) -> Unit
+    onButton: (bit: Int, pressed: Boolean) -> Unit,
 ) {
     val isPressed = (currentMask and bit) != 0
     val haptic = LocalHapticFeedback.current
+    val currentOnButton by rememberUpdatedState(onButton)
 
     Surface(
         modifier = Modifier
             .height(40.dp)
-            .pointerInput(bit, currentMask) {
-                awaitPointerEventScope {
-                    while (true) {
-                        // Wait for finger down
-                        val down = awaitPointerEvent()
-                        if (down.changes.any { it.pressed }) {
-                            onMaskChanged(currentMask or bit)
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            // Wait for finger up
-                            do {
-                                val event = awaitPointerEvent()
-                            } while (event.changes.any { it.pressed })
-                            onMaskChanged(currentMask and bit.inv())
-                        }
+            // Keyed on `bit` only: keying on the mask restarted this handler
+            // mid-press, so the release was never seen and buttons stuck down.
+            .pointerInput(bit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    currentOnButton(bit, true)
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    try {
+                        waitForUpOrCancellation()
+                    } finally {
+                        currentOnButton(bit, false)
                     }
                 }
             },

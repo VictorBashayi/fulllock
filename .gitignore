@@ -27,7 +27,11 @@ obj/
 packages/
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/settings.json
 *.swp
 *.swo
 *~

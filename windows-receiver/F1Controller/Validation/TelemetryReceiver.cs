@@ -14,11 +14,15 @@ namespace F1Controller.Validation;
 /// </summary>
 public sealed class TelemetryReceiver : IDisposable
 {
-    // F1 2023/2024 packet header size
+    // F1 23 / F1 24 / F1 25 packet header size
     private const int HeaderSize = 29;
-    // packetFormat(u16) + gameMajor(u8) + gameMinor(u8) + packetVersion(u8)
-    // + packetId(u8) + sessionUID(u64) + sessionTime(f32)
-    // + frameId(u32) + overallFrameId(u32) + playerCarIndex(u8) + secondaryPlayerCarIndex(u8)
+    // packetFormat(u16) @0 + gameYear(u8) @2 + gameMajor(u8) @3 + gameMinor(u8) @4
+    // + packetVersion(u8) @5 + packetId(u8) @6 + sessionUID(u64) @7 + sessionTime(f32) @15
+    // + frameId(u32) @19 + overallFrameId(u32) @23 + playerCarIndex(u8) @27
+    // + secondaryPlayerCarIndex(u8) @28
+    private const int PacketIdOffset = 6;
+    private const int PlayerCarIndexOffset = 27;
+    private const int MaxCars = 22;
 
     private const byte PacketIdCarTelemetry = 6;
 
@@ -68,38 +72,8 @@ public sealed class TelemetryReceiver : IDisposable
                     continue;
                 }
 
-                var data = result.Buffer.AsSpan();
-                if (data.Length < HeaderSize)
+                if (!TryParseCarTelemetry(result.Buffer, out float steer, out float throttle, out float brake))
                     continue;
-
-                // Parse header
-                // ushort packetFormat = BinaryPrimitives.ReadUInt16LittleEndian(data);
-                // byte gameMajor = data[2];
-                // byte gameMinor = data[3];
-                // byte packetVersion = data[4];
-                byte packetId = data[5];
-                // ulong sessionUID = BinaryPrimitives.ReadUInt64LittleEndian(data[6..]);
-                // float sessionTime = BitConverter.ToSingle(data[14..18]);
-                // uint frameId = BinaryPrimitives.ReadUInt32LittleEndian(data[18..]);
-                // uint overallFrameId = BinaryPrimitives.ReadUInt32LittleEndian(data[22..]);
-                byte playerCarIndex = data[26];
-                // byte secondaryPlayerCarIndex = data[27];
-
-                if (packetId != PacketIdCarTelemetry)
-                    continue;
-
-                // Validate we have enough data for the player car's telemetry
-                int playerOffset = HeaderSize + playerCarIndex * CarTelemetryEntrySize;
-                if (data.Length < playerOffset + CarTelemetryEntrySize)
-                    continue;
-
-                var carData = data[playerOffset..];
-
-                // Parse: speed(u16), throttle(f32), steer(f32), brake(f32)
-                // ushort speed = BinaryPrimitives.ReadUInt16LittleEndian(carData);
-                float throttle = BitConverter.ToSingle(carData[2..6]);
-                float steer = BitConverter.ToSingle(carData[6..10]);
-                float brake = BitConverter.ToSingle(carData[10..14]);
 
                 GameSteer = steer;
                 GameThrottle = throttle;
@@ -113,6 +87,40 @@ public sealed class TelemetryReceiver : IDisposable
         {
             _client?.Dispose();
         }
+    }
+
+    // Spans can't live in an async method (C# 12), so parsing is separate.
+    private static bool TryParseCarTelemetry(ReadOnlySpan<byte> data,
+        out float steer, out float throttle, out float brake)
+    {
+        steer = throttle = brake = 0;
+        if (data.Length < HeaderSize)
+            return false;
+
+        // Parse header (layout above). Older formats (F1 22 and earlier)
+        // use a 24-byte header without gameYear and are not supported.
+        ushort packetFormat = BinaryPrimitives.ReadUInt16LittleEndian(data);
+        if (packetFormat < 2023)
+            return false;
+
+        byte packetId = data[PacketIdOffset];
+        byte playerCarIndex = data[PlayerCarIndexOffset];
+
+        if (packetId != PacketIdCarTelemetry || playerCarIndex >= MaxCars)
+            return false;
+
+        // Validate we have enough data for the player car's telemetry
+        int playerOffset = HeaderSize + playerCarIndex * CarTelemetryEntrySize;
+        if (data.Length < playerOffset + CarTelemetryEntrySize)
+            return false;
+
+        var carData = data[playerOffset..];
+
+        // Parse: speed(u16), throttle(f32), steer(f32), brake(f32)
+        throttle = BinaryPrimitives.ReadSingleLittleEndian(carData[2..]);
+        steer = BinaryPrimitives.ReadSingleLittleEndian(carData[6..]);
+        brake = BinaryPrimitives.ReadSingleLittleEndian(carData[10..]);
+        return true;
     }
 
     public void Dispose()

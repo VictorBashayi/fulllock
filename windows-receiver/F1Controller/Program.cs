@@ -49,9 +49,13 @@ class Program
             }
         }
 
-        Console.Clear();
-        Console.CursorVisible = false;
-        Console.Title = "F1 Phone Controller — Windows Receiver";
+        bool interactive = !Console.IsOutputRedirected;
+        if (interactive)
+        {
+            Console.Clear();
+            Console.CursorVisible = false;
+            Console.Title = "F1 Phone Controller — Windows Receiver";
+        }
 
         Console.WriteLine("F1 Phone Controller — Windows Receiver");
         Console.WriteLine("======================================");
@@ -113,6 +117,17 @@ class Program
             }
         };
 
+        // Failsafe: if the phone stops sending (Wi-Fi drop, app backgrounded),
+        // release all inputs instead of holding the last throttle/steer forever.
+        bool wasReceiving = false;
+        using var failsafe = new Timer(_ =>
+        {
+            bool receiving = receiver.IsReceiving;
+            if (wasReceiving && !receiving)
+                xinput?.SubmitNeutral();
+            wasReceiving = receiving;
+        }, null, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50));
+
         var dashboard = new ConsoleDashboard(receiver, xinput, correlation);
 
         // --- Start tasks ---
@@ -128,14 +143,23 @@ class Program
         {
             // Wait a moment for initial output to clear
             await Task.Delay(1000, cts.Token).ConfigureAwait(false);
-            Console.Clear();
+            if (interactive) Console.Clear();
 
             while (!cts.Token.IsCancellationRequested)
             {
                 try
                 {
-                    dashboard.Render();
-                    await Task.Delay(67, cts.Token); // ~15 fps
+                    if (interactive)
+                    {
+                        dashboard.Render();
+                        await Task.Delay(67, cts.Token); // ~15 fps
+                    }
+                    else
+                    {
+                        // Redirected output (e.g. VS Code debug console): one line per second
+                        dashboard.WriteStatusLine();
+                        await Task.Delay(1000, cts.Token);
+                    }
                 }
                 catch (OperationCanceledException) { break; }
                 catch
@@ -157,7 +181,7 @@ class Program
         }
 
         // Cleanup
-        Console.CursorVisible = true;
+        if (interactive) Console.CursorVisible = true;
         Console.WriteLine();
         Console.WriteLine("Shutting down...");
 
