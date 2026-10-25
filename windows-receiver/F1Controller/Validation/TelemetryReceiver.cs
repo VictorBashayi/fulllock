@@ -14,14 +14,23 @@ namespace F1Controller.Validation;
 /// </summary>
 public sealed class TelemetryReceiver : IDisposable
 {
-    // F1 23 / F1 24 / F1 25 packet header size
-    private const int HeaderSize = 29;
+    /// <summary>Where the header fields sit for a given packetFormat.</summary>
+    private readonly record struct HeaderLayout(int Size, int PacketIdOffset, int PlayerCarIndexOffset);
+
+    // F1 2021 / F1 22: 24-byte header
+    // packetFormat(u16) @0 + gameMajor(u8) @2 + gameMinor(u8) @3 + packetVersion(u8) @4
+    // + packetId(u8) @5 + sessionUID(u64) @6 + sessionTime(f32) @14 + frameId(u32) @18
+    // + playerCarIndex(u8) @22 + secondaryPlayerCarIndex(u8) @23
+    private static readonly HeaderLayout Layout2021 = new(24, 5, 22);
+
+    // F1 23 / F1 24 / F1 25: 29-byte header (adds gameYear and overallFrameId)
     // packetFormat(u16) @0 + gameYear(u8) @2 + gameMajor(u8) @3 + gameMinor(u8) @4
     // + packetVersion(u8) @5 + packetId(u8) @6 + sessionUID(u64) @7 + sessionTime(f32) @15
     // + frameId(u32) @19 + overallFrameId(u32) @23 + playerCarIndex(u8) @27
     // + secondaryPlayerCarIndex(u8) @28
-    private const int PacketIdOffset = 6;
-    private const int PlayerCarIndexOffset = 27;
+    private static readonly HeaderLayout Layout2023 = new(29, 6, 27);
+
+    private const int MinHeaderSize = 24;
     private const int MaxCars = 22;
 
     private const byte PacketIdCarTelemetry = 6;
@@ -32,7 +41,11 @@ public sealed class TelemetryReceiver : IDisposable
     // tyresInnerTemp[4](u8)=4, engineTemp(u16)=2, tyresPressure[4](f32)=16,
     // surfaceType[4](u8)=4
     // Total per car: 2+4+4+4+1+1+2+1+1+2+8+4+4+2+16+4 = 60 bytes
+    // (identical in F1 2021 through F1 25)
     private const int CarTelemetryEntrySize = 60;
+
+    /// <summary>packetFormat of the last telemetry packet seen (e.g. 2021, 2024); 0 if none.</summary>
+    public int PacketFormat { get; private set; }
 
     private readonly int _port;
     private UdpClient? _client;
@@ -72,8 +85,15 @@ public sealed class TelemetryReceiver : IDisposable
                     continue;
                 }
 
-                if (!TryParseCarTelemetry(result.Buffer, out float steer, out float throttle, out float brake))
+                if (!TryParseCarTelemetry(result.Buffer, out int format,
+                        out float steer, out float throttle, out float brake))
                     continue;
+
+                if (format != PacketFormat)
+                {
+                    PacketFormat = format;
+                    Console.WriteLine($"[Telemetry] Receiving F1 {format} telemetry format.");
+                }
 
                 GameSteer = steer;
                 GameThrottle = throttle;
@@ -90,27 +110,33 @@ public sealed class TelemetryReceiver : IDisposable
     }
 
     // Spans can't live in an async method (C# 12), so parsing is separate.
-    private static bool TryParseCarTelemetry(ReadOnlySpan<byte> data,
+    private static bool TryParseCarTelemetry(ReadOnlySpan<byte> data, out int packetFormat,
         out float steer, out float throttle, out float brake)
     {
         steer = throttle = brake = 0;
-        if (data.Length < HeaderSize)
+        packetFormat = 0;
+        if (data.Length < MinHeaderSize)
             return false;
 
-        // Parse header (layout above). Older formats (F1 22 and earlier)
-        // use a 24-byte header without gameYear and are not supported.
-        ushort packetFormat = BinaryPrimitives.ReadUInt16LittleEndian(data);
-        if (packetFormat < 2023)
+        // Header layout depends on the game year (see above). F1 2020 and
+        // earlier use a different car-telemetry struct and are not supported.
+        packetFormat = BinaryPrimitives.ReadUInt16LittleEndian(data);
+        HeaderLayout layout;
+        if (packetFormat >= 2023) layout = Layout2023;
+        else if (packetFormat >= 2021) layout = Layout2021;
+        else return false;
+
+        if (data.Length < layout.Size)
             return false;
 
-        byte packetId = data[PacketIdOffset];
-        byte playerCarIndex = data[PlayerCarIndexOffset];
+        byte packetId = data[layout.PacketIdOffset];
+        byte playerCarIndex = data[layout.PlayerCarIndexOffset];
 
         if (packetId != PacketIdCarTelemetry || playerCarIndex >= MaxCars)
             return false;
 
         // Validate we have enough data for the player car's telemetry
-        int playerOffset = HeaderSize + playerCarIndex * CarTelemetryEntrySize;
+        int playerOffset = layout.Size + playerCarIndex * CarTelemetryEntrySize;
         if (data.Length < playerOffset + CarTelemetryEntrySize)
             return false;
 
