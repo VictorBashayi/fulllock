@@ -201,7 +201,7 @@ private fun RowScope.CenterPanel(
         // Steering Angle Visualizer Circle
         Box(
             modifier = Modifier
-                .size(120.dp)
+                .size(92.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surface)
                 .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
@@ -213,13 +213,12 @@ private fun RowScope.CenterPanel(
                     Icons.Default.Refresh,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(20.dp)
                 )
-                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "${angle.toInt()}°",
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 20.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
@@ -229,6 +228,12 @@ private fun RowScope.CenterPanel(
                 )
             }
         }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+        DPad(buttonMask, onButton)
 
         // Button Grid
         Column(
@@ -250,6 +255,26 @@ private fun RowScope.CenterPanel(
                 F1Button("MFD",    0x0020, buttonMask, onButton)  // BACK
             }
         }
+        }
+    }
+}
+
+/** Cross-shaped D-pad for menu navigation (XUSB_GAMEPAD_DPAD_* bits). */
+@Composable
+private fun DPad(
+    buttonMask: Int,
+    onButton: (bit: Int, pressed: Boolean) -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        F1Button("▲", 0x0001, buttonMask, onButton, square = true)        // DPAD_UP
+        Row(horizontalArrangement = Arrangement.spacedBy(42.dp)) {
+            F1Button("◀", 0x0004, buttonMask, onButton, square = true)    // DPAD_LEFT
+            F1Button("▶", 0x0008, buttonMask, onButton, square = true)    // DPAD_RIGHT
+        }
+        F1Button("▼", 0x0002, buttonMask, onButton, square = true)        // DPAD_DOWN
     }
 }
 
@@ -339,6 +364,7 @@ fun F1Button(
     bit: Int,
     currentMask: Int,
     onButton: (bit: Int, pressed: Boolean) -> Unit,
+    square: Boolean = false,
 ) {
     val isPressed = (currentMask and bit) != 0
     val haptic = LocalHapticFeedback.current
@@ -346,7 +372,7 @@ fun F1Button(
 
     Surface(
         modifier = Modifier
-            .height(40.dp)
+            .then(if (square) Modifier.size(40.dp) else Modifier.height(40.dp))
             // Keyed on `bit` only: keying on the mask restarted this handler
             // mid-press, so the release was never seen and buttons stuck down.
             .pointerInput(bit) {
@@ -369,7 +395,8 @@ fun F1Button(
         tonalElevation = if (isPressed) 0.dp else 2.dp,
     ) {
         Box(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            modifier = if (square) Modifier.fillMaxSize()
+                       else Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
