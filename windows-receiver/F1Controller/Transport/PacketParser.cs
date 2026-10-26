@@ -84,6 +84,34 @@ public readonly record struct ControlPacket(
         dest[53] = 0;
     }
 
+    /// <summary>
+    /// Race engineer radio call sent to the phone (9-byte header + text, little-endian):
+    /// [marker:u32][callId:u16][priority:u8][category:u8][textLen:u8][UTF-8 text, max 120 bytes]
+    /// Text longer than 120 bytes is truncated on a UTF-8 character boundary.
+    /// </summary>
+    public const uint RadioMarker = 0xFFFFFFFC;
+    public const int RadioMaxText = 120;
+    public const int RadioHeaderSize = 9;
+
+    /// <summary>Writes a radio call into dest (must be at least RadioHeaderSize + RadioMaxText) and returns the total bytes written.</summary>
+    public static int WriteRadioCall(Span<byte> dest, ushort callId, Engineer.RadioCall call)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(call.Text);
+        int len = Math.Min(bytes.Length, RadioMaxText);
+        if (len < bytes.Length)
+        {
+            // Step back off any UTF-8 continuation bytes so we never split a character.
+            while (len > 0 && (bytes[len] & 0xC0) == 0x80) len--;
+        }
+        BinaryPrimitives.WriteUInt32LittleEndian(dest, RadioMarker);
+        BinaryPrimitives.WriteUInt16LittleEndian(dest[4..], callId);
+        dest[6] = (byte)call.Priority;
+        dest[7] = (byte)call.Category;
+        dest[8] = (byte)len;
+        bytes.AsSpan(0, len).CopyTo(dest[RadioHeaderSize..]);
+        return RadioHeaderSize + len;
+    }
+
     public static bool IsPing(ReadOnlySpan<byte> data)
     {
         return data.Length >= 4 && BinaryPrimitives.ReadUInt32LittleEndian(data) == PingMarker;
