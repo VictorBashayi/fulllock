@@ -110,9 +110,11 @@ Wording is indicative; final strings live with the rules. Thresholds in `Enginee
 | Call | Fires when | Pri |
 |---|---|---|
 | "Gap ahead 1.4, behind 2.1." | each new lap (omit a side that is unknown) | 1 |
-| "You're in DRS range." | gap ahead drops below 1.0 s while DRS is allowed | 1 |
 | "Car behind is closing, 0.4 a lap." | gap behind shrank on each of the last 2 laps and is < 2 s | 1 |
-| "DRS enabled." | `DRSE` event | 1 |
+| "DRS enabled." | `DRSE` event (start of race and after a safety car, not every lap) | 1 |
+
+No "in DRS range" call: the DRS button on the phone already shows when DRS is available,
+and a per-lap call would repeat whenever the driver follows a car closely.
 
 ### Lap & pace
 | Call | Fires when | Pri |
@@ -155,7 +157,7 @@ Wording is indicative; final strings live with the rules. Thresholds in `Enginee
 - **Phone**: the radio packet decoder is a small function with a JVM unit test using the same
   byte example as the C# test.
 - **End to end**: a scratch script sends fake F1 2021 packets that trigger overheating, safety car,
-  DRS range and a penalty; check banner, voice and vibration on the phone with the real receiver.
+  DRS enabled and a penalty; check banner, voice and vibration on the phone with the real receiver.
 - **In game**: one race on Balanced, then tune thresholds.
 
 ## Out of scope
