@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using F1Controller.Controller;
@@ -60,6 +61,11 @@ class Program
             Console.CursorVisible = false;
             Console.Title = "F1 Phone Controller — Windows Receiver";
         }
+
+        // The game saturates CPU/GPU; at normal priority our receive loop waits
+        // behind it, which adds to ping RTT and input latency.
+        try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High; }
+        catch (Exception ex) { Console.WriteLine($"[Priority] Couldn't raise priority: {ex.Message}"); }
 
         Console.WriteLine("F1 Phone Controller — Windows Receiver");
         Console.WriteLine("======================================");
