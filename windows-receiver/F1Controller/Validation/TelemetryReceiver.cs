@@ -263,12 +263,14 @@ public sealed class TelemetryReceiver : IDisposable
                 OnRaceStateChanged?.Invoke(CurrentRaceState());
             }
 
+            // Always drain pending events so they never outlive one Lap Data packet.
+            var events = _pendingEvents.ToArray();
+            _pendingEvents.Clear();
+
             if (OnSnapshot is { } onSnapshot)
             {
                 ulong sessionUid = BinaryPrimitives.ReadUInt64LittleEndian(buffer.AsSpan(6));
                 var session = _session;
-                var events = _pendingEvents.ToArray();
-                _pendingEvents.Clear();
                 onSnapshot(new RaceSnapshot(
                     sessionTime, sessionUid, CurrentRaceState(),
                     session is { SessionType: 10 or 11 },
