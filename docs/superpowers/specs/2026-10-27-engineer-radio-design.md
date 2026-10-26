@@ -109,12 +109,13 @@ Wording is indicative; final strings live with the rules. Thresholds in `Enginee
 ### Battle & gaps
 | Call | Fires when | Pri |
 |---|---|---|
-| "Gap ahead 1.4, behind 2.1." | each new lap (omit a side that is unknown) | 1 |
+| "You're catching the car ahead, 0.3 a lap. Gap 1.8." | gap ahead shrank on each of the last 2 laps and is < 3 s | 1 |
 | "Car behind is closing, 0.4 a lap." | gap behind shrank on each of the last 2 laps and is < 2 s | 1 |
 | "DRS enabled." | `DRSE` event (start of race and after a safety car, not every lap) | 1 |
 
-No "in DRS range" call: the DRS button on the phone already shows when DRS is available,
-and a per-lap call would repeat whenever the driver follows a car closely.
+No "in DRS range" call and no every-lap gap report: the DRS button already shows when DRS is
+available, and the driver doesn't want calls that repeat every lap. Gaps are only called when
+they are trending. The rule set will be revised after a full race.
 
 ### Lap & pace
 | Call | Fires when | Pri |
