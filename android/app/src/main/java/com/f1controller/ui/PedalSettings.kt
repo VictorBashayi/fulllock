@@ -12,6 +12,6 @@ import androidx.compose.runtime.setValue
  * Button: press = 100%, release = 0%.
  */
 class PedalSettings {
-    var brakeAsButton by mutableStateOf(false)
-    var throttleAsButton by mutableStateOf(false)
+    var brakeAsButton by mutableStateOf(true)
+    var throttleAsButton by mutableStateOf(true)
 }

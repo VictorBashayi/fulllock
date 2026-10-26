@@ -34,7 +34,7 @@ class SteeringProcessor {
     @Volatile var steeringAxis: SteeringAxis = SteeringAxis.TILT
 
     /** Half the lock-to-lock range in degrees. At this angle, output saturates at ±32767. */
-    @Volatile var lockAngleDeg: Float = 90f
+    @Volatile var lockAngleDeg: Float = 60f
 
     /** Deadzone in degrees — inputs smaller than this map to zero. */
     @Volatile var deadzoneDeg: Float = 2f
@@ -46,7 +46,7 @@ class SteeringProcessor {
      * flattened (slope 1 - k), so small wobbles on straights steer less.
      * 0 = linear (original behaviour).
      */
-    @Volatile var curve: Float = 0.3f
+    @Volatile var curve: Float = 0f
 
     /** Captured center offset in radians (set by calibration). */
     @Volatile var centerOffsetRad: Float = 0f
