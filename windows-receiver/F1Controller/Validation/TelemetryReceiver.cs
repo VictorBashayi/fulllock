@@ -1,5 +1,7 @@
 using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
+using F1Controller.Engineer;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -37,6 +39,7 @@ public sealed class TelemetryReceiver : IDisposable
 
     private const byte PacketIdSession = 1;
     private const byte PacketIdLapData = 2;
+    private const byte PacketIdEvent = 3;
     private const byte PacketIdCarTelemetry = 6;
     private const byte PacketIdCarStatus = 7;
     private const byte PacketIdCarDamage = 10;
@@ -103,6 +106,15 @@ public sealed class TelemetryReceiver : IDisposable
     private readonly byte[] _tyreWear = new byte[4];  // %, FL FR RL RR
     private readonly byte[] _tyreTemp = new byte[4];  // surface °C, FL FR RL RR
     private long _lastRaceSend;
+
+    // Engineer snapshot inputs (F1 2021 only)
+    private F1Packets2021.SessionInfo? _session;
+    private sbyte _fiaFlag = -1;
+    private Damage _damage;
+    private readonly List<GameEvent> _pendingEvents = new();
+
+    /// <summary>Fires after every 2021 Lap Data packet (not throttled).</summary>
+    public event Action<RaceSnapshot>? OnSnapshot;
 
     /// <summary>Fires at most every 100 ms while lap data arrives.</summary>
     public event Action<RaceState>? OnRaceStateChanged;
@@ -203,24 +215,42 @@ public sealed class TelemetryReceiver : IDisposable
             _fuelLaps = BinaryPrimitives.ReadSingleLittleEndian(car[13..]);
             _tyreCompound = car[26];
             _tyreAgeLaps = car[27];
+            if (format == 2021)
+                _fiaFlag = F1Packets2021.FiaFlag(car);
             OnStateChanged?.Invoke(State);
         }
         else if (packetId == PacketIdSession)
         {
             // weather @0, trackTemperature @1, airTemperature @2, totalLaps @3
-            if (buffer.Length > headerSize + 3)
+            if (format == 2021)
+            {
+                var session = F1Packets2021.ParseSession(buffer.AsSpan(headerSize));
+                if (session is { } info)
+                {
+                    _session = info;
+                    _totalLaps = info.TotalLaps;
+                }
+            }
+            else if (buffer.Length > headerSize + 3)
                 _totalLaps = buffer[headerSize + 3];
+        }
+        else if (packetId == PacketIdEvent && format == 2021)
+        {
+            var ev = F1Packets2021.ParseEvent(buffer.AsSpan(headerSize), playerCarIndex);
+            if (ev is { } gameEvent)
+                _pendingEvents.Add(gameEvent);
         }
         else if (packetId == PacketIdCarDamage && format == 2021)
         {
             int offset = headerSize + playerCarIndex * CarDamageEntrySize2021;
-            if (buffer.Length < offset + 16)
+            if (buffer.Length < offset + CarDamageEntrySize2021)
                 return;
             for (int w = 0; w < 4; w++)
             {
                 float wear = BinaryPrimitives.ReadSingleLittleEndian(buffer.AsSpan(offset + WheelOrder[w] * 4));
                 _tyreWear[w] = (byte)Math.Clamp(wear, 0f, 100f);
             }
+            _damage = F1Packets2021.ParseDamage(buffer.AsSpan(offset, CarDamageEntrySize2021));
         }
         else if (packetId == PacketIdLapData && format == 2021)
         {
@@ -230,12 +260,27 @@ public sealed class TelemetryReceiver : IDisposable
             if (Stopwatch.GetElapsedTime(_lastRaceSend) >= RaceSendInterval)
             {
                 _lastRaceSend = Stopwatch.GetTimestamp();
-                OnRaceStateChanged?.Invoke(new RaceState(
-                    _race.Info, _totalLaps, _tyreCompound, _tyreAgeLaps, _fuelLaps,
-                    (byte[])_tyreWear.Clone(), (byte[])_tyreTemp.Clone()));
+                OnRaceStateChanged?.Invoke(CurrentRaceState());
+            }
+
+            if (OnSnapshot is { } onSnapshot)
+            {
+                ulong sessionUid = BinaryPrimitives.ReadUInt64LittleEndian(buffer.AsSpan(6));
+                var session = _session;
+                var events = _pendingEvents.ToArray();
+                _pendingEvents.Clear();
+                onSnapshot(new RaceSnapshot(
+                    sessionTime, sessionUid, CurrentRaceState(),
+                    session is { SessionType: 10 or 11 },
+                    session?.Weather ?? 0, session?.RainInMinutes,
+                    session?.SafetyCar ?? 0, _fiaFlag, _damage, events));
             }
         }
     }
+
+    private RaceState CurrentRaceState() => new(
+        _race.Info, _totalLaps, _tyreCompound, _tyreAgeLaps, _fuelLaps,
+        (byte[])_tyreWear.Clone(), (byte[])_tyreTemp.Clone());
 
     private static bool TryParseHeader(ReadOnlySpan<byte> data, out int packetFormat,
         out byte packetId, out int headerSize, out byte playerCarIndex)
