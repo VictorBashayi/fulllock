@@ -74,7 +74,7 @@ class Program
 
         Console.WriteLine("F1 Phone Controller — Windows Receiver");
         Console.WriteLine("======================================");
-        Console.WriteLine($"  Port:       {port}");
+        Console.WriteLine($"  Port:       {port} (announced on UDP {ControlPacket.DiscoveryPort} so the phone finds this PC)");
         Console.WriteLine($"  ViGEm:      {(noVigem ? "disabled" : "enabled")}");
         Console.WriteLine($"  Telemetry:  {(noTelemetry && !validate ? "off" : "F1 game UDP on 20777 → phone dashboard")}");
         Console.WriteLine($"  Validate:   {(validate ? "yes" : "no")}");
@@ -181,6 +181,7 @@ class Program
 
         var tasks = new List<Task>();
         tasks.Add(receiver.RunAsync(cts.Token));
+        tasks.Add(new DiscoveryBeacon(port).RunAsync(cts.Token));
 
         if (telemetry != null)
             tasks.Add(telemetry.RunAsync(cts.Token));

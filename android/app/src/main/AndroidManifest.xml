@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Required by WifiLock.acquire() -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Android 12+: SENSOR_DELAY_FASTEST (above 200 Hz) requires this -->

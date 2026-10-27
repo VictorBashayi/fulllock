@@ -112,6 +112,22 @@ public readonly record struct ControlPacket(
         return RadioHeaderSize + len;
     }
 
+    /// <summary>
+    /// "Receiver here" beacon, broadcast on <see cref="DiscoveryPort"/> about once a
+    /// second so the phone can find the PC without a typed-in IP (10 bytes, little-endian):
+    /// [marker:u32]["F1RX":4 ASCII bytes][controlPort:u16]
+    /// </summary>
+    public const uint DiscoveryMarker = 0xFFFFFFFB;
+    public const int DiscoverySize = 10;
+    public const int DiscoveryPort = 5556;
+
+    public static void WriteDiscovery(Span<byte> dest, int controlPort)
+    {
+        BinaryPrimitives.WriteUInt32LittleEndian(dest, DiscoveryMarker);
+        "F1RX"u8.CopyTo(dest[4..]);
+        BinaryPrimitives.WriteUInt16LittleEndian(dest[8..], (ushort)controlPort);
+    }
+
     public static bool IsPing(ReadOnlySpan<byte> data)
     {
         return data.Length >= 4 && BinaryPrimitives.ReadUInt32LittleEndian(data) == PingMarker;

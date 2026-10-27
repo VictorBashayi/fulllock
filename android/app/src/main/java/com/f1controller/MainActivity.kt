@@ -36,7 +36,9 @@ import androidx.navigation.compose.rememberNavController
 import com.f1controller.engineer.EngineerRadio
 import com.f1controller.engineer.EngineerSettings
 import com.f1controller.input.SteeringProcessor
+import com.f1controller.network.DiscoveryListener
 import com.f1controller.network.UdpTransport
+import com.f1controller.network.shouldSwitchServer
 import com.f1controller.sensor.SensorLogger
 import com.f1controller.ui.*
 import com.f1controller.ui.theme.F1ControllerTheme
@@ -49,6 +51,7 @@ import com.f1controller.ui.theme.F1ControllerTheme
  *   - UdpTransport (Phase 1) — sends control packets at 250 Hz
  *   - SteeringProcessor (Phase 2) — Madgwick AHRS → steering value
  *   - WifiLock — keeps Wi-Fi in low-latency mode during use
+ *   - DiscoveryListener — follows the PC to a new IP (e.g. a hotspot reassigning it)
  *
  * The sensor callback feeds both the logger (when recording) and the
  * steering processor simultaneously. The steering processor output is
@@ -73,6 +76,9 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private val sensorHandler = Handler(sensorThread.looper)
 
     private var wifiLock: WifiManager.WifiLock? = null
+    // Some phones drop broadcast packets (the discovery beacon) without this
+    private var multicastLock: WifiManager.MulticastLock? = null
+    private val discovery = DiscoveryListener(::onReceiverFound)
     private var gyroSensor: Sensor? = null
     private var accelSensor: Sensor? = null
 
@@ -105,6 +111,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         engineerRadio = EngineerRadio(this, engineerSettings, lifecycleScope)
         lifecycleScope.launch { transport.radio.collect { engineerRadio.play(it) } }
         if (transport.autoConnect) transport.connect()
+        discovery.start()
 
         gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
         accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -121,6 +128,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     pedalSettings = pedalSettings,
                     engineerSettings = engineerSettings,
                     engineerRadio = engineerRadio,
+                    discovery = discovery,
                 )
             }
         }
@@ -151,9 +159,29 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         super.onDestroy()
         sensorLogger.stopRecording()
         transport.disconnect()
+        discovery.stop()
         engineerRadio.shutdown()
         releaseWifiLock()
         sensorThread.quitSafely()
+    }
+
+    // ---- Receiver discovery ----
+
+    /** Called on the discovery thread for every beacon heard. */
+    private fun onReceiverFound(ip: String, port: Int) {
+        val connected = transport.state.value.isConnected
+        if (!shouldSwitchServer(connected, transport.serverIp, transport.serverPort, ip, port)) return
+        transport.serverIp = ip
+        transport.serverPort = port
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putString("server_ip", ip)
+            .putInt("server_port", port)
+            .apply()
+        // The send threads captured the old address; restart them on the new one
+        if (transport.isRunning()) {
+            transport.disconnect()
+            transport.connect()
+        }
     }
 
     // ---- Settings persistence ----
@@ -237,6 +265,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "F1Controller:HighPerf")
         }
         wifiLock?.acquire()
+        multicastLock = wifiManager.createMulticastLock("F1Controller:Discovery").apply {
+            setReferenceCounted(false)
+            acquire()
+        }
     }
 
     private fun releaseWifiLock() {
@@ -244,6 +276,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             if (it.isHeld) it.release()
         }
         wifiLock = null
+        multicastLock?.let {
+            if (it.isHeld) it.release()
+        }
+        multicastLock = null
     }
 
     private companion object {
@@ -268,6 +304,7 @@ fun F1ControllerApp(
     pedalSettings: PedalSettings,
     engineerSettings: EngineerSettings,
     engineerRadio: EngineerRadio,
+    discovery: DiscoveryListener,
 ) {
     val navController = rememberNavController()
     val radioCall by engineerRadio.current.collectAsState()
@@ -327,6 +364,7 @@ fun F1ControllerApp(
                     pedalSettings = pedalSettings,
                     engineerSettings = engineerSettings,
                     engineerRadio = engineerRadio,
+                    discovery = discovery,
                 )
             }
         }

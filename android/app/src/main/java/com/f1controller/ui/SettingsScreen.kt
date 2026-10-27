@@ -18,6 +18,7 @@ import com.f1controller.engineer.ENGINEER_LEVEL_NAMES
 import com.f1controller.engineer.EngineerRadio
 import com.f1controller.engineer.EngineerSettings
 import com.f1controller.input.SteeringProcessor
+import com.f1controller.network.DiscoveryListener
 import com.f1controller.network.RadioCall
 import com.f1controller.network.UdpTransport
 
@@ -32,8 +33,12 @@ fun SettingsScreen(
     pedalSettings: PedalSettings,
     engineerSettings: EngineerSettings,
     engineerRadio: EngineerRadio,
+    discovery: DiscoveryListener,
 ) {
     var serverIp by remember { mutableStateOf(transport.serverIp) }
+    val found by discovery.found.collectAsState()
+    // Discovery may have moved the transport to a new IP; show it in the field
+    LaunchedEffect(found) { serverIp = transport.serverIp }
     var serverPort by remember { mutableStateOf(transport.serverPort.toString()) }
     var beta by remember { mutableFloatStateOf(steeringProcessor.madgwick.beta) }
     var axis by remember { mutableStateOf(steeringProcessor.steeringAxis) }
@@ -123,6 +128,11 @@ fun SettingsScreen(
                 else -> "Idle"
             }
             Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                found?.let { "Found PC at $it" } ?: "Looking for the PC on this network…",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Text(
                 status,
                 fontSize = 12.sp,
