@@ -14,7 +14,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.f1controller.engineer.ENGINEER_LEVEL_NAMES
+import com.f1controller.engineer.EngineerRadio
+import com.f1controller.engineer.EngineerSettings
 import com.f1controller.input.SteeringProcessor
+import com.f1controller.network.RadioCall
 import com.f1controller.network.UdpTransport
 
 /**
@@ -26,6 +30,8 @@ fun SettingsScreen(
     transport: UdpTransport,
     steeringProcessor: SteeringProcessor,
     pedalSettings: PedalSettings,
+    engineerSettings: EngineerSettings,
+    engineerRadio: EngineerRadio,
 ) {
     var serverIp by remember { mutableStateOf(transport.serverIp) }
     var serverPort by remember { mutableStateOf(transport.serverPort.toString()) }
@@ -275,6 +281,47 @@ fun SettingsScreen(
             PedalModeRow("Throttle", pedalSettings.throttleAsButton) { pedalSettings.throttleAsButton = it }
             Text(
                 "Slider = drag up for more pressure. Button = press for 100%, release for 0%.",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // ---- Race engineer ----
+        SectionCard("Engineer") {
+            Text("How much the engineer talks", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ENGINEER_LEVEL_NAMES.forEachIndexed { level, name ->
+                    FilterChip(
+                        selected = engineerSettings.level == level,
+                        onClick = { engineerSettings.level = level },
+                        label = { Text(name) }
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = engineerSettings.voice, onCheckedChange = { engineerSettings.voice = it })
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("Voice", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                Spacer(modifier = Modifier.width(24.dp))
+                Switch(checked = engineerSettings.vibrate, onCheckedChange = { engineerSettings.vibrate = it })
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("Vibration", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+            }
+            val voiceAvailable by engineerRadio.voiceAvailable.collectAsState()
+            if (!voiceAvailable) {
+                Text("Voice unavailable (text-to-speech not ready)", fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.error)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(onClick = {
+                engineerRadio.play(RadioCall(-1, 2, 0, "Radio check, how do you hear me?"), force = true)
+            }) {
+                Text("Test call")
+            }
+            Text(
+                "Quiet: only things to act on. Balanced: plus useful info. Talkative: also sector colours.",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

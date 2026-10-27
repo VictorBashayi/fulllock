@@ -19,6 +19,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -31,6 +33,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.f1controller.engineer.EngineerRadio
 import com.f1controller.engineer.EngineerSettings
 import com.f1controller.input.SteeringProcessor
 import com.f1controller.network.UdpTransport
@@ -61,6 +64,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private val steeringProcessor = SteeringProcessor()
     private val pedalSettings = PedalSettings()
     private val engineerSettings = EngineerSettings()
+    private lateinit var engineerRadio: EngineerRadio
 
     // Sensor callbacks run here instead of the UI thread, so Compose frames
     // can't delay steering updates.
@@ -98,6 +102,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         sensorLogger = SensorLogger(sensorManager, sensorHandler)
         loadSettings()
+        engineerRadio = EngineerRadio(this, engineerSettings, lifecycleScope)
+        lifecycleScope.launch { transport.radio.collect { engineerRadio.play(it) } }
         if (transport.autoConnect) transport.connect()
 
         gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
@@ -113,6 +119,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     transport = transport,
                     steeringProcessor = steeringProcessor,
                     pedalSettings = pedalSettings,
+                    engineerSettings = engineerSettings,
+                    engineerRadio = engineerRadio,
                 )
             }
         }
@@ -143,6 +151,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         super.onDestroy()
         sensorLogger.stopRecording()
         transport.disconnect()
+        engineerRadio.shutdown()
         releaseWifiLock()
         sensorThread.quitSafely()
     }
@@ -257,8 +266,11 @@ fun F1ControllerApp(
     transport: UdpTransport,
     steeringProcessor: SteeringProcessor,
     pedalSettings: PedalSettings,
+    engineerSettings: EngineerSettings,
+    engineerRadio: EngineerRadio,
 ) {
     val navController = rememberNavController()
+    val radioCall by engineerRadio.current.collectAsState()
     val currentBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStack?.destination?.route
 
@@ -301,6 +313,7 @@ fun F1ControllerApp(
                     onSteeringAngleDisplay = { steeringProcessor.currentAngleDeg },
                     lockAngleDeg = { steeringProcessor.lockAngleDeg },
                     pedalSettings = pedalSettings,
+                    radioCall = radioCall,
                     onOpenSettings = { navigateTo(NavTab.SETTINGS.route) },
                 )
             }
@@ -312,6 +325,8 @@ fun F1ControllerApp(
                     transport = transport,
                     steeringProcessor = steeringProcessor,
                     pedalSettings = pedalSettings,
+                    engineerSettings = engineerSettings,
+                    engineerRadio = engineerRadio,
                 )
             }
         }

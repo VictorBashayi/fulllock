@@ -1,5 +1,6 @@
 package com.f1controller.ui
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.f1controller.network.RadioCall
 import com.f1controller.network.UdpTransport
 import kotlinx.coroutines.delay
 import kotlin.math.cos
@@ -107,6 +109,7 @@ fun ControllerScreen(
     onSteeringAngleDisplay: () -> Float,
     lockAngleDeg: () -> Float,
     pedalSettings: PedalSettings,
+    radioCall: RadioCall?,
     onOpenSettings: () -> Unit,
 ) {
     val tState by transport.state.collectAsState()
@@ -183,7 +186,9 @@ fun ControllerScreen(
                     PillButton("BACK", BTN_BACK, buttonMask, onButton, Palette.Text)
                     PillButton("START", BTN_START, buttonMask, onButton, Palette.Cyan)
                 }
-                race?.let { InfoStrip(it) }
+                Crossfade(targetState = radioCall, label = "engineer") { call ->
+                    if (call != null) EngineerBanner(call) else race?.let { InfoStrip(it) }
+                }
             }
             Row(Modifier.weight(0.34f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(gap)) {
                 DrsButton(game, buttonMask, onButton, Modifier.weight(1f).fillMaxHeight())
