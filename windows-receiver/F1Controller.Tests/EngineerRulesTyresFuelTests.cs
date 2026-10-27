@@ -65,15 +65,37 @@ public class EngineerRulesTyresFuelTests
         Assert.Contains(results[^1], c => c.Key == "tyre-hot-FL");
     }
 
-    [Fact]
-    public void HotTyreNamesEachCorner()
+    [Theory]
+    [InlineData(0, 0, 115, 115, "tyre-hot-rears", "Rears are overheating, manage them.")]
+    [InlineData(115, 115, 0, 0, "tyre-hot-fronts", "Fronts are overheating, manage them.")]
+    [InlineData(115, 115, 115, 115, "tyre-hot-all", "All four tyres are overheating, manage them.")]
+    [InlineData(0, 115, 115, 115, "tyre-hot-multi", "Front right, rear left and rear right are overheating, manage them.")]
+    public void TyresOverheatingTogetherAreOneCall(byte fl, byte fr, byte rl, byte rr, string key, string text)
     {
+        // 0 = not hot
+        byte[] temps = Temps(fl == 0 ? (byte)90 : fl, fr == 0 ? (byte)90 : fr, rl == 0 ? (byte)90 : rl, rr == 0 ? (byte)90 : rr);
         var rules = new EngineerRules(T);
         var r = Run(rules,
-            Snapshots.Make(t: 100, temps: Temps(fr: 115, rl: 115, rr: 115)),
-            Snapshots.Make(t: 106, temps: Temps(fr: 115, rl: 115, rr: 115)));
-        Assert.Equal(new[] { "tyre-hot-FR", "tyre-hot-RL", "tyre-hot-RR" }, r[1].Select(c => c.Key).ToArray());
-        Assert.Equal("Rear right is overheating, manage it.", r[1].Last().Text);
+            Snapshots.Make(t: 100, temps: temps),
+            Snapshots.Make(t: 106, temps: temps));
+        var call = Assert.Single(r[1]);
+        Assert.Equal(key, call.Key);
+        Assert.Equal(text, call.Text);
+        Assert.Equal(RadioPriority.Important, call.Priority);
+    }
+
+    [Fact]
+    public void TyreHotLaterJoinsTheFirstCallAndDoesNotRepeat()
+    {
+        // Burnout: rear left over the limit first, rear right two seconds later
+        var rules = new EngineerRules(T);
+        var r = Run(rules,
+            Snapshots.Make(t: 100, temps: Temps(rl: 115)),
+            Snapshots.Make(t: 102, temps: Temps(rl: 115, rr: 115)),
+            Snapshots.Make(t: 105, temps: Temps(rl: 115, rr: 115)),
+            Snapshots.Make(t: 108, temps: Temps(rl: 115, rr: 115)));
+        Assert.Equal("tyre-hot-rears", Assert.Single(r[2]).Key);
+        Assert.Empty(r[3]);
     }
 
     [Fact]
@@ -84,12 +106,30 @@ public class EngineerRulesTyresFuelTests
         var r = Run(rules,
             Snapshots.Make(t: 100, lap: 1, temps: cold),
             Snapshots.Make(t: 101, lap: 3, temps: cold, sc: 1),
-            Snapshots.Make(t: 102, lap: 3, temps: cold, sc: 0));
+            Snapshots.Make(t: 111, lap: 3, temps: cold, sc: 1),
+            Snapshots.Make(t: 112, lap: 3, temps: cold, sc: 0),
+            Snapshots.Make(t: 122, lap: 3, temps: cold, sc: 0));
         // The safety car itself is called too; only the cold-tyre call matters here
-        Assert.Equal(0, Count(r.Take(2).ToList(), "tyre-cold"));
-        var call = Assert.Single(r[2], c => c.Key == "tyre-cold");
+        Assert.Equal(0, Count(r.Take(4).ToList(), "tyre-cold"));
+        var call = Assert.Single(r[4], c => c.Key == "tyre-cold");
         Assert.Equal("Tyres are cold, push to get heat in.", call.Text);
         Assert.Equal(RadioPriority.Important, call.Priority);
+    }
+
+    [Fact]
+    public void ColdTyresNeedTenSeconds()
+    {
+        // Slow stretch after a push lap: brief dip below the limit, then warm again
+        var rules = new EngineerRules(T);
+        var r = Run(rules,
+            Snapshots.Make(t: 100, temps: Temps(60, 60, 60, 60)),
+            Snapshots.Make(t: 109, temps: Temps(60, 60, 60, 60)),
+            Snapshots.Make(t: 110, temps: Temps(80, 80, 80, 80)),
+            Snapshots.Make(t: 111, temps: Temps(60, 60, 60, 60)),
+            Snapshots.Make(t: 120, temps: Temps(60, 60, 60, 60)),
+            Snapshots.Make(t: 121, temps: Temps(60, 60, 60, 60)));
+        Assert.Equal(0, Count(r.Take(5).ToList(), "tyre-cold"));
+        Assert.Single(r[5], c => c.Key == "tyre-cold");
     }
 
     [Fact]
@@ -211,7 +251,7 @@ public class EngineerRulesTyresFuelTests
     [InlineData("rain-forecast", 600f)]
     [InlineData("sc-deployed", 0f)]
     [InlineData("flag-red", 0f)]
-    [InlineData("flag-yellow", 0f)]
+    [InlineData("flag-yellow", 60f)]
     [InlineData("damage-front-wing", 0f)]
     [InlineData("penalty", 0f)]
     [InlineData("drs", 0f)]
@@ -219,6 +259,7 @@ public class EngineerRulesTyresFuelTests
     [InlineData("last-lap", 0f)]
     [InlineData("lap-invalid", 0f)]
     [InlineData("tyre-hot-FL", 60f)]
+    [InlineData("tyre-hot-rears", 60f)]
     [InlineData("fuel-tight", 60f)]
     [InlineData("something-else", 60f)]
     public void CooldownForMapsKeys(string key, float expected) =>

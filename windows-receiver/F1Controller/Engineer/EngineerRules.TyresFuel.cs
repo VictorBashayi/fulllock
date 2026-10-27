@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace F1Controller.Engineer;
 
@@ -10,6 +11,8 @@ public sealed partial class EngineerRules
     // Session time at which each tyre first went over the hot limit in its current spell; null while it is not hot.
     private readonly float?[] _hotSince = new float?[4];
     private readonly bool[] _hotFired = new bool[4];
+    // Session time at which the average tyre temperature went under the cold limit; null while it isn't
+    private float? _coldSince;
     private bool _wearWarnArmed = true;
     private bool _wearBoxArmed = true;
     private bool _fuelTightArmed = true;
@@ -19,6 +22,7 @@ public sealed partial class EngineerRules
     {
         System.Array.Clear(_hotSince);
         System.Array.Clear(_hotFired);
+        _coldSince = null;
         _wearWarnArmed = true;
         _wearBoxArmed = true;
         _fuelTightArmed = true;
@@ -35,9 +39,15 @@ public sealed partial class EngineerRules
         return calls;
     }
 
+    /// <summary>
+    /// A tyre is called once it has been over the limit for <see cref="EngineerThresholds.TyreHotSeconds"/>.
+    /// Every other tyre that is over the limit at that moment joins the same call (a burnout heats
+    /// both rears within seconds), and isn't called again until it has cooled down.
+    /// </summary>
     private void HotTyres(RaceSnapshot current, List<RadioCall> calls)
     {
         var temps = current.Race.TyreTemp;
+        bool anyDue = false;
         for (int i = 0; i < 4 && i < temps.Length; i++)
         {
             if (temps[i] <= _t.TyreHotC)
@@ -49,20 +59,60 @@ public sealed partial class EngineerRules
 
             _hotSince[i] ??= current.SessionTime;
             if (!_hotFired[i] && current.SessionTime - _hotSince[i]!.Value >= _t.TyreHotSeconds)
+                anyDue = true;
+        }
+        if (!anyDue) return;
+
+        var hot = new List<int>();
+        for (int i = 0; i < 4; i++)
+        {
+            if (_hotSince[i] != null && !_hotFired[i])
             {
                 _hotFired[i] = true;
-                calls.Add(new RadioCall(TyreKeys[i], $"{TyreNames[i]} is overheating, manage it.",
-                    RadioPriority.Important, RadioCategory.Tyres));
+                hot.Add(i);
             }
         }
+        calls.Add(HotTyreCall(hot));
+    }
+
+    private static RadioCall HotTyreCall(List<int> hot)
+    {
+        var (key, text) = hot switch
+        {
+            [var i] => (TyreKeys[i], $"{TyreNames[i]} is overheating, manage it."),
+            [0, 1] => ("tyre-hot-fronts", "Fronts are overheating, manage them."),
+            [2, 3] => ("tyre-hot-rears", "Rears are overheating, manage them."),
+            [0, 1, 2, 3] => ("tyre-hot-all", "All four tyres are overheating, manage them."),
+            _ => ("tyre-hot-multi", $"{JoinNames(hot)} are overheating, manage them."),
+        };
+        return new RadioCall(key, text, RadioPriority.Important, RadioCategory.Tyres);
+    }
+
+    /// <summary>"Front right, rear left and rear right".</summary>
+    private static string JoinNames(List<int> tyres)
+    {
+        var names = tyres.Select((t, n) => n == 0 ? TyreNames[t] : TyreNames[t].ToLowerInvariant()).ToList();
+        return string.Join(", ", names.Take(names.Count - 1)) + " and " + names[^1];
     }
 
     private void ColdTyres(RaceSnapshot current, List<RadioCall> calls)
     {
         var temps = current.Race.TyreTemp;
-        if (temps.Length < 4 || current.Race.Timing.CurrentLap < 2 || current.SafetyCar != 0) return;
+        if (temps.Length < 4 || current.Race.Timing.CurrentLap < 2 || current.SafetyCar != 0)
+        {
+            _coldSince = null;
+            return;
+        }
         double avg = (temps[0] + temps[1] + temps[2] + temps[3]) / 4.0;
-        if (avg < _t.TyreColdC)
+        if (avg >= _t.TyreColdC)
+        {
+            _coldSince = null;
+            return;
+        }
+
+        // A slow stretch after a push lap cools them briefly; only call it if it lasts
+        _coldSince ??= current.SessionTime;
+        if (current.SessionTime - _coldSince.Value >= _t.TyreColdSeconds)
             calls.Add(new RadioCall("tyre-cold", "Tyres are cold, push to get heat in.",
                 RadioPriority.Important, RadioCategory.Tyres));
     }

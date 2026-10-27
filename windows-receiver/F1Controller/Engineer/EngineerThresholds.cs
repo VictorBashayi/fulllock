@@ -6,6 +6,7 @@ public sealed class EngineerThresholds
     public int TyreHotC { get; init; } = 110;
     public float TyreHotSeconds { get; init; } = 5f;
     public int TyreColdC { get; init; } = 70;
+    public float TyreColdSeconds { get; init; } = 10f;
     public int WearWarnPct { get; init; } = 50;
     public int WearBoxPct { get; init; } = 70;
     public int WearRearmPct { get; init; } = 10;
@@ -38,7 +39,7 @@ public sealed class EngineerThresholds
         if (key.StartsWith("tyre-cold")) return ColdCooldownSeconds;
         if (key.StartsWith("rain-forecast")) return RainForecastCooldownSeconds;
         if (key.StartsWith("sc-") || key.StartsWith("damage-")
-            || key == "flag-red" || key == "flag-yellow"
+            || key == "flag-red"
             || key == "penalty" || key == "drs" || key == "pb"
             || key == "last-lap" || key == "lap-invalid")
             return 0f;
