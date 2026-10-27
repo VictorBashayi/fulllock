@@ -85,10 +85,9 @@ public class EngineerRulesTyresFuelTests
             Snapshots.Make(t: 100, lap: 1, temps: cold),
             Snapshots.Make(t: 101, lap: 3, temps: cold, sc: 1),
             Snapshots.Make(t: 102, lap: 3, temps: cold, sc: 0));
-        Assert.Empty(r[0]);
-        Assert.Empty(r[1]);
-        var call = Assert.Single(r[2]);
-        Assert.Equal("tyre-cold", call.Key);
+        // The safety car itself is called too; only the cold-tyre call matters here
+        Assert.Equal(0, Count(r.Take(2).ToList(), "tyre-cold"));
+        var call = Assert.Single(r[2], c => c.Key == "tyre-cold");
         Assert.Equal("Tyres are cold, push to get heat in.", call.Text);
         Assert.Equal(RadioPriority.Important, call.Priority);
     }

@@ -21,7 +21,12 @@ internal static class Snapshots
         uint bestLapMs = 0,
         RaceTracker.SectorStatus s1 = RaceTracker.SectorStatus.None,
         RaceTracker.SectorStatus s2 = RaceTracker.SectorStatus.None,
-        byte totalLaps = 50)
+        byte totalLaps = 50,
+        byte weather = 0,
+        int? rainIn = null,
+        sbyte fiaFlag = 0,
+        Damage damage = default,
+        GameEvent[]? events = null)
     {
         var timing = new RaceInfo(
             Position: position, CurrentLap: lap, Sector: 0, LapInvalid: lapInvalid,
@@ -34,7 +39,7 @@ internal static class Snapshots
             TyreWear: wear ?? new byte[] { 10, 10, 10, 10 },
             TyreTemp: temps ?? new byte[] { 90, 90, 90, 90 });
         return new RaceSnapshot(
-            t, SessionUid: 1, race, isRace, Weather: 0, RainInMinutes: null,
-            SafetyCar: sc, FiaFlag: 0, new Damage(0, 0, 0, 0, 0), Array.Empty<GameEvent>());
+            t, SessionUid: 1, race, isRace, Weather: weather, RainInMinutes: rainIn,
+            SafetyCar: sc, FiaFlag: fiaFlag, damage, events ?? Array.Empty<GameEvent>());
     }
 }
