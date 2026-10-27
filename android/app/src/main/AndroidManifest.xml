@@ -17,6 +17,13 @@
     <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="true" />
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
 
+    <!-- Android 11+: without this the app can't see the text-to-speech engine (engineer voice) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

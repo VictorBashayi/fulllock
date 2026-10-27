@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.f1controller.network.RadioCall
 
-/** An engineer call, shown where the info strip normally sits. Colour bar = urgency. */
+/** An engineer call, shown over the top of the centre panel. Colour bar = urgency. */
 @Composable
 internal fun EngineerBanner(call: RadioCall) {
     val accent = when {
@@ -38,10 +38,10 @@ internal fun EngineerBanner(call: RadioCall) {
             Text(
                 call.text,
                 fontFamily = Condensed,
-                fontSize = 15.sp,
-                lineHeight = 17.sp,
+                fontSize = 16.sp,
+                lineHeight = 18.sp,
                 color = Palette.Text,
-                maxLines = 2,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
         }

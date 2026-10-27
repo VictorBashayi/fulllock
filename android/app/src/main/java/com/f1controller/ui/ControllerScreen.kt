@@ -186,9 +186,7 @@ fun ControllerScreen(
                     PillButton("BACK", BTN_BACK, buttonMask, onButton, Palette.Text)
                     PillButton("START", BTN_START, buttonMask, onButton, Palette.Cyan)
                 }
-                Crossfade(targetState = radioCall, label = "engineer") { call ->
-                    if (call != null) EngineerBanner(call) else race?.let { InfoStrip(it) }
-                }
+                race?.let { InfoStrip(it) }
             }
             Row(Modifier.weight(0.34f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(gap)) {
                 DrsButton(game, buttonMask, onButton, Modifier.weight(1f).fillMaxHeight())
@@ -238,6 +236,14 @@ fun ControllerScreen(
                         )
                         1 -> CarView(race, game)
                         else -> TimingView(race)
+                    }
+                    // Engineer calls sit on top of the centre view; it's the biggest free space
+                    Crossfade(
+                        targetState = radioCall,
+                        label = "engineer",
+                        modifier = Modifier.align(Alignment.TopCenter).offset(y = (-10).dp)
+                    ) { call ->
+                        if (call != null) EngineerBanner(call)
                     }
                 }
                 Text(
