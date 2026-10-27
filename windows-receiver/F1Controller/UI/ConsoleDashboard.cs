@@ -13,16 +13,19 @@ public sealed class ConsoleDashboard
     private readonly UdpReceiver _receiver;
     private readonly Controller.XInputController? _xinput;
     private readonly Validation.CorrelationLogger? _correlation;
+    private readonly RadioSender? _radio;
     private readonly StringBuilder _sb = new(1024);
     private int _lastHeight;
 
     public ConsoleDashboard(UdpReceiver receiver,
                             Controller.XInputController? xinput,
-                            Validation.CorrelationLogger? correlation)
+                            Validation.CorrelationLogger? correlation,
+                            RadioSender? radio = null)
     {
         _receiver = receiver;
         _xinput = xinput;
         _correlation = correlation;
+        _radio = radio;
     }
 
     public void Render()
@@ -66,6 +69,8 @@ public sealed class ConsoleDashboard
         _sb.AppendLine("╠═══════════════════════════════════════════════╣");
         _sb.AppendLine($"║  ViGEm:        {Pad(vigemStatus, 30)} ║");
         _sb.AppendLine($"║  Submit lat:   {Pad($"{submitLatMs:F3} ms", 30)} ║");
+        if (_radio != null)
+            _sb.AppendLine($"║  Engineer:     {Pad(_radio.LastText ?? "—", 30)} ║");
 
         if (_correlation != null && _correlation.SampleCount > 0)
         {

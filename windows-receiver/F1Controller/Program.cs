@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using F1Controller.Controller;
+using F1Controller.Engineer;
 using F1Controller.Transport;
 using F1Controller.UI;
 using F1Controller.Validation;
@@ -18,6 +19,7 @@ class Program
         bool logTransport = false;
         bool noVigem = false;
         bool noTelemetry = false;
+        bool radioDemo = false;
 
         // Simple argument parsing
         for (int i = 0; i < args.Length; i++)
@@ -42,6 +44,9 @@ class Program
                     break;
                 case "--no-telemetry":
                     noTelemetry = true;
+                    break;
+                case "--radio-demo":
+                    radioDemo = true;
                     break;
                 case "--help":
                 case "-h":
@@ -112,10 +117,16 @@ class Program
         if (validate || !noTelemetry)
             telemetry = new TelemetryReceiver(20777);
 
+        // The race engineer's calls go to the phone (and on the dashboard / log)
+        var radio = new RadioSender(receiver, interactive ? null : text => Console.WriteLine($"[Engineer] {text}"));
+
         // Forward gear/revs/DRS/ERS to the phone as the game reports them.
         // Called on the telemetry thread only, so one buffer is enough.
         if (telemetry != null && !noTelemetry)
         {
+            var engineer = new EngineerService(new EngineerThresholds(), radio.Send);
+            telemetry.OnSnapshot += engineer.OnSnapshot;
+
             var stateBuf = new byte[ControlPacket.GameStateSize];
             telemetry.OnStateChanged += state =>
             {
@@ -156,7 +167,7 @@ class Program
             wasReceiving = receiving;
         }, null, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50));
 
-        var dashboard = new ConsoleDashboard(receiver, xinput, correlation);
+        var dashboard = new ConsoleDashboard(receiver, xinput, correlation, radio);
 
         // --- Start tasks ---
 
@@ -165,6 +176,9 @@ class Program
 
         if (telemetry != null)
             tasks.Add(telemetry.RunAsync(cts.Token));
+
+        if (radioDemo)
+            tasks.Add(RadioDemoAsync(receiver, radio, cts.Token));
 
         // Dashboard refresh loop (~15 Hz)
         tasks.Add(Task.Run(async () =>
@@ -240,6 +254,29 @@ class Program
         return 0;
     }
 
+    /// <summary>Once the phone connects, sends one sample call of each priority, 5 s apart.</summary>
+    private static async Task RadioDemoAsync(UdpReceiver receiver, RadioSender radio, CancellationToken ct)
+    {
+        var calls = new[]
+        {
+            new RadioCall("demo-chatter", "Purple sector.", RadioPriority.Chatter, RadioCategory.Lap),
+            new RadioCall("demo-info", "DRS enabled.", RadioPriority.Info, RadioCategory.Other),
+            new RadioCall("demo-important", "Front left is overheating, manage it.", RadioPriority.Important, RadioCategory.Tyres),
+            new RadioCall("demo-critical", "Safety car deployed.", RadioPriority.Critical, RadioCategory.Flags),
+        };
+        try
+        {
+            while (!receiver.IsReceiving)
+                await Task.Delay(500, ct);
+            foreach (var call in calls)
+            {
+                await Task.Delay(5000, ct);
+                radio.Send(call);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
     private static void PrintUsage()
     {
         Console.WriteLine("""
@@ -253,6 +290,7 @@ class Program
               --log-transport   Log transport metrics to CSV
               --no-vigem        Disable virtual controller (transport only)
               --no-telemetry    Don't listen for game telemetry / send it to the phone
+              --radio-demo      Send one sample engineer call of each priority once the phone connects
               -h, --help        Show this help
 
             Examples:
