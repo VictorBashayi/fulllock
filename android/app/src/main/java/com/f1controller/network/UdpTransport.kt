@@ -1,6 +1,8 @@
 package com.f1controller.network
 
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -31,6 +33,10 @@ import kotlin.concurrent.thread
  *
  * Race state packet (54 bytes, receiver → phone, ~10 Hz): marker 0xFFFFFFFD;
  * layout in PacketParser.cs (WriteRaceState) and [onRaceState].
+ *
+ * Radio packet (9 + text bytes, receiver → phone, one per engineer call, sent 3×):
+ *   [0xFC 0xFF 0xFF 0xFF][callId:u16][priority:u8][category:u8][textLen:u8][UTF-8 text ≤ 120]
+ *   Repeats share a callId and are dropped here; see [decodeRadioCall].
  *
  * UDP has no connection, so "connected" means a pong arrived within the last
  * [LINK_TIMEOUT_NS]. "active" means the send threads are running.
@@ -98,6 +104,12 @@ class UdpTransport {
     val race: StateFlow<RaceState?> = _race
     @Volatile private var lastRaceNs = 0L
 
+    private val _radio = MutableSharedFlow<RadioCall>(extraBufferCapacity = 8)
+    /** Engineer calls, each delivered once even though the receiver sends it 3 times. */
+    val radio: SharedFlow<RadioCall> = _radio
+    // Recent call IDs, to drop the repeats; only touched by the receive thread
+    private val recentCallIds = ArrayDeque<Int>()
+
     private val _telemetry = MutableStateFlow<GameTelemetry?>(null)
     /** Latest game telemetry, or null if none arrived in the last [TELEMETRY_TIMEOUT_NS]. */
     val telemetry: StateFlow<GameTelemetry?> = _telemetry
@@ -153,6 +165,7 @@ class UdpTransport {
         }
 
         resetStats()
+        recentCallIds.clear()  // the receiver's call IDs restart with it
         _state.value = TransportState(isActive = true)
 
         // Resolve on a worker thread (getByName may hit DNS) and fail softly.
@@ -272,17 +285,24 @@ class UdpTransport {
 
     // Listen for pongs and game state
     private fun receiveLoop(s: Session) {
-        val recvBuf = ByteArray(64)
+        val recvBuf = ByteArray(256)
         val recvPacket = DatagramPacket(recvBuf, recvBuf.size)
 
         while (isCurrent(s)) {
             try {
                 recvPacket.length = recvBuf.size
                 s.socket.receive(recvPacket)
-                if (recvPacket.length < 16) continue
+                if (recvPacket.length < 4) continue
 
                 val bb = ByteBuffer.wrap(recvBuf, 0, recvPacket.length).order(ByteOrder.LITTLE_ENDIAN)
-                when (bb.int) {
+                val marker = bb.int
+                // Radio packets can be shorter than the 16-byte minimum of the others
+                if (marker == RADIO_MARKER) {
+                    decodeRadioCall(bb)?.let(::onRadioCall)
+                    continue
+                }
+                if (recvPacket.length < 16) continue
+                when (marker) {
                     PING_MARKER -> {}
                     GAME_STATE_MARKER -> {
                         onGameState(bb)
@@ -312,6 +332,13 @@ class UdpTransport {
                 // Socket closed
             }
         }
+    }
+
+    private fun onRadioCall(call: RadioCall) {
+        if (call.id in recentCallIds) return
+        recentCallIds.addLast(call.id)
+        if (recentCallIds.size > RECENT_CALL_IDS) recentCallIds.removeFirst()
+        _radio.tryEmit(call)
     }
 
     private fun onGameState(bb: ByteBuffer) {
@@ -419,6 +446,8 @@ class UdpTransport {
         private const val PING_MARKER = 0xFFFFFFFF.toInt()
         private const val GAME_STATE_MARKER = 0xFFFFFFFE.toInt()
         private const val RACE_STATE_MARKER = 0xFFFFFFFD.toInt()
+        private const val RADIO_MARKER = 0xFFFFFFFC.toInt()
+        private const val RECENT_CALL_IDS = 16
         private const val RACE_STATE_SIZE = 54
         private const val TELEMETRY_TIMEOUT_NS = 1_500_000_000L
         private const val LINK_TIMEOUT_NS = 1_000_000_000L
