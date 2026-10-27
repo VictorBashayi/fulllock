@@ -107,8 +107,8 @@ class UdpTransport {
     private val _radio = MutableSharedFlow<RadioCall>(extraBufferCapacity = 8)
     /** Engineer calls, each delivered once even though the receiver sends it 3 times. */
     val radio: SharedFlow<RadioCall> = _radio
-    // Recent call IDs, to drop the repeats; only touched by the receive thread
-    private val recentCallIds = ArrayDeque<Int>()
+    // Drops the repeats of each call; only touched by the receive thread
+    private val recentCallIds = RecentCallIds()
 
     private val _telemetry = MutableStateFlow<GameTelemetry?>(null)
     /** Latest game telemetry, or null if none arrived in the last [TELEMETRY_TIMEOUT_NS]. */
@@ -165,7 +165,6 @@ class UdpTransport {
         }
 
         resetStats()
-        recentCallIds.clear()  // the receiver's call IDs restart with it
         _state.value = TransportState(isActive = true)
 
         // Resolve on a worker thread (getByName may hit DNS) and fail softly.
@@ -335,9 +334,7 @@ class UdpTransport {
     }
 
     private fun onRadioCall(call: RadioCall) {
-        if (call.id in recentCallIds) return
-        recentCallIds.addLast(call.id)
-        if (recentCallIds.size > RECENT_CALL_IDS) recentCallIds.removeFirst()
+        if (recentCallIds.isRepeat(call.id, System.nanoTime() / 1_000_000L)) return
         _radio.tryEmit(call)
     }
 
@@ -447,7 +444,6 @@ class UdpTransport {
         private const val GAME_STATE_MARKER = 0xFFFFFFFE.toInt()
         private const val RACE_STATE_MARKER = 0xFFFFFFFD.toInt()
         private const val RADIO_MARKER = 0xFFFFFFFC.toInt()
-        private const val RECENT_CALL_IDS = 16
         private const val RACE_STATE_SIZE = 54
         private const val TELEMETRY_TIMEOUT_NS = 1_500_000_000L
         private const val LINK_TIMEOUT_NS = 1_000_000_000L

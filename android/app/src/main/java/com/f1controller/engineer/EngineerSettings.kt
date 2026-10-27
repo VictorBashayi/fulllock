@@ -23,3 +23,11 @@ class EngineerSettings {
  * Off plays nothing, Quiet important and critical, Balanced info and up, Talkative all.
  */
 fun shouldPlay(level: Int, priority: Int): Boolean = level > 0 && priority >= 3 - level
+
+/**
+ * Whether a new call of [priority] should cut off the speech in progress ([inFlight] =
+ * priorities still queued or speaking). Critical calls interrupt lesser ones but queue
+ * behind another critical call, so a burst (e.g. several parts damaged at once) is all heard.
+ */
+fun shouldInterrupt(priority: Int, inFlight: Collection<Int>): Boolean =
+    priority >= 3 && inFlight.none { it >= 3 }

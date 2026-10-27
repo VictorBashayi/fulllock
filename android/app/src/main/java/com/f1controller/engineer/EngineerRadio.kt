@@ -43,6 +43,8 @@ class EngineerRadio(
     private var shown = 0
     private var speaking = false
     private var minTimeUp = false
+    // Priority of each utterance queued or speaking, by utterance ID
+    private val inFlight = HashMap<String, Int>()
 
     private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
         scope.launch { onTtsReady(status == TextToSpeech.SUCCESS) }
@@ -55,6 +57,7 @@ class EngineerRadio(
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String) {}
             override fun onDone(utteranceId: String) = spoken(utteranceId)
+            override fun onStop(utteranceId: String, interrupted: Boolean) = spoken(utteranceId)
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String) = spoken(utteranceId)
         })
@@ -68,11 +71,7 @@ class EngineerRadio(
         val token = ++shown
         _current.value = call
         minTimeUp = false
-        speaking = settings.voice && _voiceAvailable.value
-        if (speaking) {
-            val mode = if (call.priority >= 3) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-            tts.speak(call.text, mode, null, "call-$token")
-        }
+        speaking = settings.voice && _voiceAvailable.value && speak(call, "call-$token")
         if (settings.vibrate) vibrate(call.priority)
 
         scope.launch {
@@ -84,8 +83,19 @@ class EngineerRadio(
         }
     }
 
+    /** Queues [call] for speech; returns false if the engine refused it (no done callback will come). */
+    private fun speak(call: RadioCall, utteranceId: String): Boolean {
+        val interrupt = shouldInterrupt(call.priority, inFlight.values)
+        if (interrupt) inFlight.clear()  // flushed: their callbacks may never arrive
+        val mode = if (interrupt) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+        if (tts.speak(call.text, mode, null, utteranceId) != TextToSpeech.SUCCESS) return false
+        inFlight[utteranceId] = call.priority
+        return true
+    }
+
     private fun spoken(utteranceId: String) {
         scope.launch {
+            inFlight.remove(utteranceId)
             if (utteranceId == "call-$shown") {
                 speaking = false
                 clearIfDone()
