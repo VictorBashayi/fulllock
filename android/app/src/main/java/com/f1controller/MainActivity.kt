@@ -31,6 +31,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.f1controller.engineer.EngineerSettings
 import com.f1controller.input.SteeringProcessor
 import com.f1controller.network.UdpTransport
 import com.f1controller.sensor.SensorLogger
@@ -59,6 +60,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private val transport = UdpTransport()
     private val steeringProcessor = SteeringProcessor()
     private val pedalSettings = PedalSettings()
+    private val engineerSettings = EngineerSettings()
 
     // Sensor callbacks run here instead of the UI thread, so Compose frames
     // can't delay steering updates.
@@ -155,6 +157,9 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         steeringProcessor.curve = prefs.getFloat("curve", steeringProcessor.curve)
         pedalSettings.brakeAsButton = prefs.getBoolean("brake_as_button", pedalSettings.brakeAsButton)
         pedalSettings.throttleAsButton = prefs.getBoolean("throttle_as_button", pedalSettings.throttleAsButton)
+        engineerSettings.level = prefs.getInt("engineer_level", engineerSettings.level)
+        engineerSettings.voice = prefs.getBoolean("engineer_voice", engineerSettings.voice)
+        engineerSettings.vibrate = prefs.getBoolean("engineer_vibrate", engineerSettings.vibrate)
         steeringProcessor.madgwick.beta = prefs.getFloat("beta", steeringProcessor.madgwick.beta)
         steeringProcessor.lockAngleDeg = prefs.getFloat("lock_angle", steeringProcessor.lockAngleDeg)
         steeringProcessor.deadzoneDeg = prefs.getFloat("deadzone", steeringProcessor.deadzoneDeg)
@@ -173,6 +178,9 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             .putFloat("curve", steeringProcessor.curve)
             .putBoolean("brake_as_button", pedalSettings.brakeAsButton)
             .putBoolean("throttle_as_button", pedalSettings.throttleAsButton)
+            .putInt("engineer_level", engineerSettings.level)
+            .putBoolean("engineer_voice", engineerSettings.voice)
+            .putBoolean("engineer_vibrate", engineerSettings.vibrate)
             .putFloat("beta", steeringProcessor.madgwick.beta)
             .putFloat("lock_angle", steeringProcessor.lockAngleDeg)
             .putFloat("deadzone", steeringProcessor.deadzoneDeg)
