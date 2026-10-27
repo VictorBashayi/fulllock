@@ -31,3 +31,18 @@ fun shouldPlay(level: Int, priority: Int): Boolean = level > 0 && priority >= 3 
  */
 fun shouldInterrupt(priority: Int, inFlight: Collection<Int>): Boolean =
     priority >= 3 && inFlight.none { it >= 3 }
+
+/**
+ * Rate-limits speech engine reconnects to one per [minIntervalMs], so an engine that
+ * stays broken doesn't get rebuilt on every call. Refused attempts don't restart the wait.
+ */
+class ReconnectGate(private val minIntervalMs: Long) {
+    private var lastMs: Long? = null
+
+    fun tryAcquire(nowMs: Long): Boolean {
+        val last = lastMs
+        if (last != null && nowMs - last < minIntervalMs) return false
+        lastMs = nowMs
+        return true
+    }
+}
