@@ -13,16 +13,24 @@ internal static class Snapshots
         byte[]? wear = null,
         float fuel = 1f,
         bool isRace = true,
-        byte sc = 0)
+        byte sc = 0,
+        byte position = 1,
+        int? gapAhead = null,
+        int? gapBehind = null,
+        bool lapInvalid = false,
+        uint bestLapMs = 0,
+        RaceTracker.SectorStatus s1 = RaceTracker.SectorStatus.None,
+        RaceTracker.SectorStatus s2 = RaceTracker.SectorStatus.None,
+        byte totalLaps = 50)
     {
         var timing = new RaceInfo(
-            Position: 1, CurrentLap: lap, Sector: 0, LapInvalid: false,
-            CurrentLapMs: 0, LastLapMs: 0, BestLapMs: 0, DeltaMs: null,
+            Position: position, CurrentLap: lap, Sector: 0, LapInvalid: lapInvalid,
+            CurrentLapMs: 0, LastLapMs: 0, BestLapMs: bestLapMs, DeltaMs: null,
             S1: 0, S2: 0,
-            S1Status: RaceTracker.SectorStatus.None, S2Status: RaceTracker.SectorStatus.None,
-            GapAheadMs: null, GapBehindMs: null);
+            S1Status: s1, S2Status: s2,
+            GapAheadMs: gapAhead, GapBehindMs: gapBehind);
         var race = new RaceState(
-            timing, TotalLaps: 50, TyreCompound: 0, TyreAgeLaps: 0, FuelLaps: fuel,
+            timing, TotalLaps: totalLaps, TyreCompound: 0, TyreAgeLaps: 0, FuelLaps: fuel,
             TyreWear: wear ?? new byte[] { 10, 10, 10, 10 },
             TyreTemp: temps ?? new byte[] { 90, 90, 90, 90 });
         return new RaceSnapshot(

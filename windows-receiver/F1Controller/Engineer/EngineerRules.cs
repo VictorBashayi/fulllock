@@ -17,12 +17,14 @@ public sealed partial class EngineerRules
     {
         var calls = new List<RadioCall>();
         calls.AddRange(TyresFuel(previous, current));
-        // Later tasks add: calls.AddRange(GapsLap(previous, current)); calls.AddRange(FlagsWeatherDamage(previous, current));
+        calls.AddRange(GapsLap(previous, current));
+        // Task 6 adds: calls.AddRange(FlagsWeatherDamage(previous, current));
         return calls;
     }
 
     public void Reset()
     {
         ResetTyresFuel();
+        ResetGapsLap();
     }
 }
