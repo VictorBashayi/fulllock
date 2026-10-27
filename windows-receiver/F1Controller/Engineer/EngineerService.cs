@@ -14,18 +14,36 @@ public sealed class EngineerService
     private readonly EngineerRules _rules;
     private readonly RadioDispatcher _dispatcher;
     private readonly Action<RadioCall> _send;
+    private readonly Action<Exception>? _onError;
     private RaceSnapshot? _previous;
     private float _sessionStart;
 
-    public EngineerService(EngineerThresholds t, Action<RadioCall> send)
+    /// <param name="onError">
+    /// Receives any failure inside the engineer. Errors never propagate: the caller is the
+    /// telemetry receive loop, which also feeds the phone's dashboard.
+    /// </param>
+    public EngineerService(EngineerThresholds t, Action<RadioCall> send, Action<Exception>? onError = null)
     {
         _t = t;
         _rules = new EngineerRules(t);
         _dispatcher = new RadioDispatcher(t);
         _send = send;
+        _onError = onError;
     }
 
     public void OnSnapshot(RaceSnapshot s)
+    {
+        try
+        {
+            Process(s);
+        }
+        catch (Exception ex)
+        {
+            _onError?.Invoke(ex);
+        }
+    }
+
+    private void Process(RaceSnapshot s)
     {
         if (_previous == null || s.SessionUid != _previous.SessionUid || s.SessionTime < _previous.SessionTime)
         {

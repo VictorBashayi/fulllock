@@ -60,6 +60,17 @@ public class EngineerServiceTests
     }
 
     [Fact]
+    public void ErrorsAreContained()
+    {
+        // A failure inside the engineer must not escape into the telemetry receive loop
+        var errors = new List<Exception>();
+        var service = new EngineerService(new EngineerThresholds(), _ => throw new InvalidOperationException("boom"), errors.Add);
+        service.OnSnapshot(Snapshots.Make(t: 10, fiaFlag: 0));
+        service.OnSnapshot(Snapshots.Make(t: 20, fiaFlag: 4));
+        Assert.Equal("boom", Assert.Single(errors).Message);
+    }
+
+    [Fact]
     public void QueuedCallsGoOutOnLaterSnapshots()
     {
         var (service, sent) = Make();

@@ -50,6 +50,20 @@ public class EngineerRulesGapsLapTests
     }
 
     [Fact]
+    public void CatchingIgnoresNoiseSizedShrinks()
+    {
+        // Equal pace: the gap wobbles down by a few hundredths, which isn't catching anyone
+        Assert.Null(Find(Last(new EngineerRules(T),
+            Snapshots.Make(lap: 5, gapAhead: 2400),
+            Snapshots.Make(lap: 6, gapAhead: 2370),
+            Snapshots.Make(lap: 7, gapAhead: 2340)), "gap-ahead"));
+        Assert.Null(Find(Last(new EngineerRules(T),
+            Snapshots.Make(lap: 5, gapBehind: 1500),
+            Snapshots.Make(lap: 6, gapBehind: 1300),
+            Snapshots.Make(lap: 7, gapBehind: 1260)), "gap-behind"));
+    }
+
+    [Fact]
     public void GapSampledOnlyOnLapChange()
     {
         // Mid-lap gap changes are not samples: only the value at each new lap counts

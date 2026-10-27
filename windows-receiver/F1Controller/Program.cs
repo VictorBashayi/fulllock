@@ -117,14 +117,22 @@ class Program
         if (validate || !noTelemetry)
             telemetry = new TelemetryReceiver(20777);
 
+        var disposables = new List<IDisposable>();
+
         // The race engineer's calls go to the phone (and on the dashboard / log)
-        var radio = new RadioSender(receiver, interactive ? null : text => Console.WriteLine($"[Engineer] {text}"));
+        var radio =new RadioSender(receiver, interactive ? null : text => Console.WriteLine($"[Engineer] {text}"));
 
         // Forward gear/revs/DRS/ERS to the phone as the game reports them.
         // Called on the telemetry thread only, so one buffer is enough.
         if (telemetry != null && !noTelemetry)
         {
-            var engineer = new EngineerService(new EngineerThresholds(), radio.Send);
+            // Every call (and any engineer error) also goes to a log file for reviewing the race
+            var callLogWriter = new StreamWriter($"engineer_log_{DateTime.Now:yyyyMMdd_HHmmss}.txt", append: false);
+            disposables.Add(callLogWriter);
+            var callLog = new CallLog(callLogWriter);
+            var engineer = new EngineerService(new EngineerThresholds(),
+                call => { radio.Send(call); callLog.Write(call); },
+                callLog.WriteError);
             telemetry.OnSnapshot += engineer.OnSnapshot;
 
             var stateBuf = new byte[ControlPacket.GameStateSize];
@@ -231,6 +239,7 @@ class Program
         correlation?.Dispose();
         telemetry?.Dispose();
         receiver.Dispose();
+        foreach (var d in disposables) d.Dispose();
 
         // Print final stats if validation was running
         if (correlation != null && correlation.SampleCount > 0)

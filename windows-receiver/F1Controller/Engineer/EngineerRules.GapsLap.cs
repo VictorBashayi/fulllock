@@ -71,8 +71,9 @@ public sealed partial class EngineerRules
     }
 
     /// <summary>
-    /// Records this lap's gap and returns the average shrink per lap (ms) when the gap shrank
-    /// on each of the last <see cref="EngineerThresholds.CatchMinLaps"/> laps and is under
+    /// Records this lap's gap and returns the average shrink per lap (ms) when the gap shrank by
+    /// at least <see cref="EngineerThresholds.CatchMinShrinkMs"/> on each of the last
+    /// <see cref="EngineerThresholds.CatchMinLaps"/> laps and is under
     /// <paramref name="maxGapMs"/>; otherwise null.
     /// </summary>
     private float? Trend(List<int> history, int? gapMs, int maxGapMs)
@@ -89,7 +90,7 @@ public sealed partial class EngineerRules
         if (history.Count < needed || gap >= maxGapMs) return null;
 
         for (int i = 1; i < history.Count; i++)
-            if (history[i] >= history[i - 1]) return null;
+            if (history[i - 1] - history[i] < _t.CatchMinShrinkMs) return null;
 
         return (history[0] - gap) / (float)(history.Count - 1);
     }

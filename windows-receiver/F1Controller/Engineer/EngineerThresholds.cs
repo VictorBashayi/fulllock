@@ -12,6 +12,8 @@ public sealed class EngineerThresholds
     public float FuelTightLaps { get; init; } = -0.3f;
     public float FuelCriticalLaps { get; init; } = -1.0f;
     public int CatchMinLaps { get; init; } = 2;
+    /// <summary>Smallest lap-to-lap gap shrink that counts as a trend; less is timing noise.</summary>
+    public int CatchMinShrinkMs { get; init; } = 100;
     public int CatchMaxGapMs { get; init; } = 3000;
     public int ClosingMaxGapMs { get; init; } = 2000;
     public int DamageStepPct { get; init; } = 10;

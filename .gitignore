@@ -39,6 +39,9 @@ packages/
 # CSV data files
 *.csv
 
+# Race engineer call logs
+engineer_log_*.txt
+
 # OS
 .DS_Store
 Thumbs.db
