@@ -30,9 +30,9 @@ public class EngineerRulesTyresFuelTests
     {
         var rules = new EngineerRules(T);
         var r = Run(rules,
-            Snapshots.Make(t: 100, temps: Temps(fl: 112)),
-            Snapshots.Make(t: 104, temps: Temps(fl: 112)),
-            Snapshots.Make(t: 105.1f, temps: Temps(fl: 112)));
+            Snapshots.Make(t: 100, inner: Temps(fl: 112)),
+            Snapshots.Make(t: 104, inner: Temps(fl: 112)),
+            Snapshots.Make(t: 105.1f, inner: Temps(fl: 112)));
         Assert.Empty(r[0]);
         Assert.Empty(r[1]);
         var call = Assert.Single(r[2]);
@@ -47,16 +47,16 @@ public class EngineerRulesTyresFuelTests
     {
         var rules = new EngineerRules(T);
         var snaps = new List<RaceSnapshot>();
-        for (float t = 100; t <= 120; t += 1) snaps.Add(Snapshots.Make(t: t, temps: Temps(fl: 112)));
+        for (float t = 100; t <= 120; t += 1) snaps.Add(Snapshots.Make(t: t, inner: Temps(fl: 112)));
         Assert.Equal(1, Count(Run(rules, snaps.ToArray()), "tyre-hot-FL"));
 
-        // Cools down, then a second spell.
+        // Cools down, then a second spell once the 3-lap mute is over.
         var second = new[]
         {
-            Snapshots.Make(t: 121, temps: Temps(fl: 100)),
-            Snapshots.Make(t: 122, temps: Temps(fl: 112)),
-            Snapshots.Make(t: 125, temps: Temps(fl: 112)),
-            Snapshots.Make(t: 127.2f, temps: Temps(fl: 112)),
+            Snapshots.Make(t: 121, lap: 8, inner: Temps(fl: 100)),
+            Snapshots.Make(t: 122, lap: 8, inner: Temps(fl: 112)),
+            Snapshots.Make(t: 125, lap: 8, inner: Temps(fl: 112)),
+            Snapshots.Make(t: 127.2f, lap: 8, inner: Temps(fl: 112)),
         };
         var results = new List<IReadOnlyList<RadioCall>>();
         RaceSnapshot prev = snaps[^1];
@@ -76,8 +76,8 @@ public class EngineerRulesTyresFuelTests
         byte[] temps = Temps(fl == 0 ? (byte)90 : fl, fr == 0 ? (byte)90 : fr, rl == 0 ? (byte)90 : rl, rr == 0 ? (byte)90 : rr);
         var rules = new EngineerRules(T);
         var r = Run(rules,
-            Snapshots.Make(t: 100, temps: temps),
-            Snapshots.Make(t: 106, temps: temps));
+            Snapshots.Make(t: 100, inner: temps),
+            Snapshots.Make(t: 106, inner: temps));
         var call = Assert.Single(r[1]);
         Assert.Equal(key, call.Key);
         Assert.Equal(text, call.Text);
@@ -90,12 +90,95 @@ public class EngineerRulesTyresFuelTests
         // Burnout: rear left over the limit first, rear right two seconds later
         var rules = new EngineerRules(T);
         var r = Run(rules,
-            Snapshots.Make(t: 100, temps: Temps(rl: 115)),
-            Snapshots.Make(t: 102, temps: Temps(rl: 115, rr: 115)),
-            Snapshots.Make(t: 105, temps: Temps(rl: 115, rr: 115)),
-            Snapshots.Make(t: 108, temps: Temps(rl: 115, rr: 115)));
+            Snapshots.Make(t: 100, inner: Temps(rl: 115)),
+            Snapshots.Make(t: 102, inner: Temps(rl: 115, rr: 115)),
+            Snapshots.Make(t: 105, inner: Temps(rl: 115, rr: 115)),
+            Snapshots.Make(t: 108, inner: Temps(rl: 115, rr: 115)));
         Assert.Equal("tyre-hot-rears", Assert.Single(r[2]).Key);
         Assert.Empty(r[3]);
+    }
+
+    [Fact]
+    public void BrakingSurfaceSpikeIsNotOverheating()
+    {
+        var rules = new EngineerRules(T);
+        var snaps = new List<RaceSnapshot>();
+        for (float t = 100; t <= 110; t += 1)
+            snaps.Add(Snapshots.Make(t: t, temps: Temps(fl: 125, fr: 125), inner: Temps(fl: 100, fr: 100)));
+        Assert.Equal(0, Run(rules, snaps.ToArray()).Sum(r => r.Count(c => c.Key.StartsWith("tyre-hot"))));
+    }
+
+    /// <summary>Front left inner temperature <paramref name="c"/> from t to t+6 on <paramref name="lap"/>.</summary>
+    private static RaceSnapshot[] HotSpell(float t, byte lap, byte c, byte pitStops = 0) => new[]
+    {
+        Snapshots.Make(t: t, lap: lap, inner: Temps(fl: 90), pitStops: pitStops),
+        Snapshots.Make(t: t + 1, lap: lap, inner: Temps(fl: c), pitStops: pitStops),
+        Snapshots.Make(t: t + 7, lap: lap, inner: Temps(fl: c), pitStops: pitStops),
+    };
+
+    [Fact]
+    public void HotTyreMutedForThreeLaps()
+    {
+        var rules = new EngineerRules(T);
+        var spells = new[] { HotSpell(100, 5, 108), HotSpell(200, 6, 108), HotSpell(300, 7, 108), HotSpell(400, 8, 108) };
+        var counts = spells.Select(s => Count(Run(rules, s), "tyre-hot-FL")).ToArray();
+        Assert.Equal(new[] { 1, 0, 0, 1 }, counts);
+    }
+
+    [Fact]
+    public void HotterTyreBreaksMute()
+    {
+        var rules = new EngineerRules(T);
+        Assert.Equal(1, Count(Run(rules, HotSpell(100, 5, 108)), "tyre-hot-FL"));
+        Assert.Equal(0, Count(Run(rules, HotSpell(200, 6, 112)), "tyre-hot-FL"));  // +4: still muted
+        Assert.Equal(1, Count(Run(rules, HotSpell(300, 6, 113)), "tyre-hot-FL"));  // +5: worse
+    }
+
+    [Fact]
+    public void PitStopResetsTyreMemory()
+    {
+        var rules = new EngineerRules(T);
+        Assert.Equal(1, Count(Run(rules, HotSpell(100, 5, 108)), "tyre-hot-FL"));
+        var afterStop = HotSpell(200, 6, 108, pitStops: 1);
+        // Run() starts without a previous snapshot; feed the stop as a change from lap 5
+        var results = new List<IReadOnlyList<RadioCall>>();
+        RaceSnapshot prev = Snapshots.Make(t: 150, lap: 5, inner: Temps(fl: 90));
+        rules.Evaluate(null, prev);
+        foreach (var s in afterStop) { results.Add(rules.Evaluate(prev, s)); prev = s; }
+        Assert.Equal(1, Count(results, "tyre-hot-FL"));
+    }
+
+    [Fact]
+    public void NoColdCallOnOutLap()
+    {
+        var rules = new EngineerRules(T);
+        var cold = Temps(60, 60, 60, 60);
+        var outLap = Run(rules,
+            Snapshots.Make(t: 100, lap: 4),
+            Snapshots.Make(t: 101, lap: 5, temps: cold, pitStatus: 2),
+            Snapshots.Make(t: 102, lap: 5, temps: cold),
+            Snapshots.Make(t: 117, lap: 5, temps: cold));
+        Assert.Equal(0, Count(outLap, "tyre-cold"));
+
+        var next = new List<IReadOnlyList<RadioCall>>();
+        RaceSnapshot prev = Snapshots.Make(t: 117, lap: 5, temps: cold);
+        foreach (var s in new[] { Snapshots.Make(t: 118, lap: 6, temps: cold), Snapshots.Make(t: 129, lap: 6, temps: cold) })
+        { next.Add(rules.Evaluate(prev, s)); prev = s; }
+        Assert.Equal(1, Count(next, "tyre-cold"));
+    }
+
+    [Fact]
+    public void LapTyreLogLine()
+    {
+        var rules = new EngineerRules(T);
+        Run(rules,
+            Snapshots.Make(t: 100, lap: 4, temps: Temps(110, 100, 90, 90), inner: Temps(95, 90, 90, 90)),
+            Snapshots.Make(t: 101, lap: 4, temps: Temps(121, 118, 104, 102), inner: Temps(101, 99, 95, 94)),
+            Snapshots.Make(t: 102, lap: 4, temps: Temps(100, 100, 100, 100), inner: Temps(96, 96, 93, 93)));
+        Assert.Empty(rules.TakeLogLines());
+        rules.Evaluate(Snapshots.Make(t: 102, lap: 4), Snapshots.Make(t: 103, lap: 5));
+        Assert.Equal(new[] { "lap 4 tyres  surface 121/118/104/102  inner 101/99/95/94" }, rules.TakeLogLines());
+        Assert.Empty(rules.TakeLogLines());
     }
 
     [Fact]
@@ -234,12 +317,12 @@ public class EngineerRulesTyresFuelTests
     {
         var rules = new EngineerRules(T);
         Run(rules,
-            Snapshots.Make(t: 100, temps: Temps(fl: 112)),
-            Snapshots.Make(t: 106, temps: Temps(fl: 112)));
+            Snapshots.Make(t: 100, inner: Temps(fl: 112)),
+            Snapshots.Make(t: 106, inner: Temps(fl: 112)));
         rules.Reset();
         var r = Run(rules,
-            Snapshots.Make(t: 200, temps: Temps(fl: 112)),
-            Snapshots.Make(t: 206, temps: Temps(fl: 112)));
+            Snapshots.Make(t: 200, inner: Temps(fl: 112)),
+            Snapshots.Make(t: 206, inner: Temps(fl: 112)));
         Assert.Contains(r[1], c => c.Key == "tyre-hot-FL");
     }
 

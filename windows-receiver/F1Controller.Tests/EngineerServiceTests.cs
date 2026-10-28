@@ -100,6 +100,16 @@ public class EngineerServiceTests
     }
 
     [Fact]
+    public void ServiceForwardsLogLines()
+    {
+        var lines = new List<string>();
+        var service = new EngineerService(new EngineerThresholds(), _ => { }, log: lines.Add);
+        service.OnSnapshot(Snapshots.Make(t: 10, lap: 5));
+        service.OnSnapshot(Snapshots.Make(t: 20, lap: 6));
+        Assert.Equal(new[] { "lap 5 tyres  surface 90/90/90/90  inner 90/90/90/90" }, lines);
+    }
+
+    [Fact]
     public void ErrorsAreContained()
     {
         // A failure inside the engineer must not escape into the telemetry receive loop

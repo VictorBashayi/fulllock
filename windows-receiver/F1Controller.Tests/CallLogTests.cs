@@ -18,6 +18,15 @@ public class CallLogTests
     }
 
     [Fact]
+    public void WritesNote()
+    {
+        var w = new StringWriter();
+        var log = new CallLog(w, () => new DateTime(2026, 10, 28, 12, 0, 0));
+        log.WriteNote("x");
+        Assert.Equal("12:00:00.000  x" + Environment.NewLine, w.ToString());
+    }
+
+    [Fact]
     public void WritesErrors()
     {
         var w = new StringWriter();

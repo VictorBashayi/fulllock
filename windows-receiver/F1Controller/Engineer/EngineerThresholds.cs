@@ -3,7 +3,10 @@ namespace F1Controller.Engineer;
 /// <summary>Tunable limits and cooldowns for the race engineer.</summary>
 public sealed class EngineerThresholds
 {
-    public int TyreHotC { get; init; } = 110;
+    /// <summary>Inner (carcass) temperature over which a tyre is overheating.</summary>
+    public int TyreHotC { get; init; } = 105;
+    public int TyreHotRepeatLaps { get; init; } = 3;
+    public int TyreHotWorseC { get; init; } = 5;
     public float TyreHotSeconds { get; init; } = 5f;
     public int TyreColdC { get; init; } = 70;
     public float TyreColdSeconds { get; init; } = 10f;

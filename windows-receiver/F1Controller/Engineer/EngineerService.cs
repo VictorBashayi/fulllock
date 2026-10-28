@@ -69,6 +69,8 @@ public sealed class EngineerService
 
         // Evaluate even while warming up, so rule memory reflects the current state
         var calls = _rules.Evaluate(_previous, s, _level?.Invoke() ?? 2);
+        foreach (var line in _rules.TakeLogLines())
+            _log?.Invoke(line);
         _previous = s;
         if (s.SessionTime - _sessionStart < _t.WarmupSeconds) return;
 

@@ -24,6 +24,9 @@ public sealed class CallLog
 
     public void WriteError(Exception ex) => WriteLine($"ERROR  {ex}");
 
+    /// <summary>A log-only line, e.g. the per-lap tyre temperatures.</summary>
+    public void WriteNote(string text) => WriteLine(text);
+
     private void WriteLine(string text)
     {
         lock (_lock)
