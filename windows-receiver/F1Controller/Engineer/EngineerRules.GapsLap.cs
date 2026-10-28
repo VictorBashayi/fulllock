@@ -41,11 +41,8 @@ public sealed partial class EngineerRules
         if (!prev.LapInvalid && cur.LapInvalid && !newLap)
             calls.Add(new RadioCall("lap-invalid", "Lap deleted, track limits.", RadioPriority.Important, RadioCategory.Lap));
 
-        if (prev.BestLapMs != 0 && cur.BestLapMs != 0 && cur.BestLapMs < prev.BestLapMs)
+        if (IsPersonalBest(prev, cur))
             calls.Add(new RadioCall("pb", $"Personal best, {FormatLap(cur.BestLapMs)}.", RadioPriority.Info, RadioCategory.Lap));
-
-        Sector("sector-1", prev.S1Status, cur.S1Status, calls);
-        Sector("sector-2", prev.S2Status, cur.S2Status, calls);
 
         byte totalLaps = current.Race.TotalLaps;
         if (current.IsRace && totalLaps > 0 && newLap && cur.CurrentLap == totalLaps)
@@ -100,14 +97,9 @@ public sealed partial class EngineerRules
         return (history[0] - gap) / (float)(history.Count - 1);
     }
 
-    private static void Sector(string key, RaceTracker.SectorStatus prev, RaceTracker.SectorStatus cur, List<RadioCall> calls)
-    {
-        if (cur == prev) return;
-        if (cur == RaceTracker.SectorStatus.OverallBest)
-            calls.Add(new RadioCall(key, "Purple sector.", RadioPriority.Chatter, RadioCategory.Lap));
-        else if (cur == RaceTracker.SectorStatus.PersonalBest)
-            calls.Add(new RadioCall(key, "Green sector.", RadioPriority.Chatter, RadioCategory.Lap));
-    }
+    /// <summary>The game's best lap improved (the first lap set doesn't count as an improvement).</summary>
+    private static bool IsPersonalBest(RaceInfo prev, RaceInfo cur) =>
+        prev.BestLapMs != 0 && cur.BestLapMs != 0 && cur.BestLapMs < prev.BestLapMs;
 
     private static string Seconds(float ms) => (ms / 1000f).ToString("0.0", CultureInfo.InvariantCulture);
 

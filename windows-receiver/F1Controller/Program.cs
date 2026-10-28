@@ -132,7 +132,8 @@ class Program
             var callLog = new CallLog(callLogWriter);
             var engineer = new EngineerService(new EngineerThresholds(),
                 call => { radio.Send(call); callLog.Write(call); },
-                callLog.WriteError);
+                callLog.WriteError,
+                level: () => receiver.EngineerLevel);
             telemetry.OnSnapshot += engineer.OnSnapshot;
 
             var stateBuf = new byte[ControlPacket.GameStateSize];

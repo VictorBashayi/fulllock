@@ -23,7 +23,8 @@ public sealed class EngineerThresholds
     public float MinSpacingSeconds { get; init; } = 4f;
     public float DefaultCooldownSeconds { get; init; } = 60f;
     public float GapCooldownSeconds { get; init; } = 240f;
-    public float SectorCooldownSeconds { get; init; } = 20f;
+    /// <summary>Lap report: a sector within this much of the best lap's is "matched".</summary>
+    public int SectorMatchedMs { get; init; } = 50;
     public float BlueFlagCooldownSeconds { get; init; } = 30f;
     public float ColdCooldownSeconds { get; init; } = 120f;
     public float RainForecastCooldownSeconds { get; init; } = 600f;
@@ -36,14 +37,13 @@ public sealed class EngineerThresholds
     public float CooldownFor(string key)
     {
         if (key.StartsWith("gap-")) return GapCooldownSeconds;
-        if (key.StartsWith("sector-")) return SectorCooldownSeconds;
         if (key.StartsWith("flag-blue")) return BlueFlagCooldownSeconds;
         if (key.StartsWith("tyre-cold")) return ColdCooldownSeconds;
         if (key.StartsWith("rain-forecast")) return RainForecastCooldownSeconds;
         if (key.StartsWith("sc-") || key.StartsWith("damage-")
             || key == "flag-red"
             || key == "penalty" || key == "drs" || key == "pb"
-            || key == "last-lap" || key == "lap-invalid")
+            || key == "last-lap" || key == "lap-invalid" || key == "lap-report")
             return 0f;
         return DefaultCooldownSeconds;
     }

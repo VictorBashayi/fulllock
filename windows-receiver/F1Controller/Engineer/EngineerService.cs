@@ -15,6 +15,8 @@ public sealed class EngineerService
     private readonly RadioDispatcher _dispatcher;
     private readonly Action<RadioCall> _send;
     private readonly Action<Exception>? _onError;
+    private readonly Func<int>? _level;
+    private readonly Action<string>? _log;
     private RaceSnapshot? _previous;
     private float _sessionStart;
 
@@ -22,13 +24,18 @@ public sealed class EngineerService
     /// Receives any failure inside the engineer. Errors never propagate: the caller is the
     /// telemetry receive loop, which also feeds the phone's dashboard.
     /// </param>
-    public EngineerService(EngineerThresholds t, Action<RadioCall> send, Action<Exception>? onError = null)
+    /// <param name="level">The phone's chattiness (0 Off … 3 Talkative); Balanced when not given.</param>
+    /// <param name="log">Receives log-only lines (never sent to the phone), e.g. per-lap tyre temperatures.</param>
+    public EngineerService(EngineerThresholds t, Action<RadioCall> send, Action<Exception>? onError = null,
+        Func<int>? level = null, Action<string>? log = null)
     {
         _t = t;
         _rules = new EngineerRules(t);
         _dispatcher = new RadioDispatcher(t);
         _send = send;
         _onError = onError;
+        _level = level;
+        _log = log;
     }
 
     public void OnSnapshot(RaceSnapshot s)
@@ -61,7 +68,7 @@ public sealed class EngineerService
         }
 
         // Evaluate even while warming up, so rule memory reflects the current state
-        var calls = _rules.Evaluate(_previous, s);
+        var calls = _rules.Evaluate(_previous, s, _level?.Invoke() ?? 2);
         _previous = s;
         if (s.SessionTime - _sessionStart < _t.WarmupSeconds) return;
 

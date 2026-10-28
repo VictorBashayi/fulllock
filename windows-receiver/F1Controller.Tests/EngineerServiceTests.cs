@@ -88,6 +88,18 @@ public class EngineerServiceTests
     }
 
     [Fact]
+    public void LapReportUsesThePhonesLevel()
+    {
+        // Talkative: lap 5 (odd) gets a report, which Balanced would skip
+        var sent = new List<RadioCall>();
+        var service = new EngineerService(new EngineerThresholds(), sent.Add, level: () => 3);
+        service.OnSnapshot(Snapshots.Make(t: 10, lap: 5));
+        service.OnSnapshot(Snapshots.Make(t: 20, lap: 5, s1Ms: 25000, s2Ms: 30000));
+        service.OnSnapshot(Snapshots.Make(t: 21, lap: 6, lastLapMs: 80000));
+        Assert.Equal("lap-report", Assert.Single(sent).Key);
+    }
+
+    [Fact]
     public void ErrorsAreContained()
     {
         // A failure inside the engineer must not escape into the telemetry receive loop

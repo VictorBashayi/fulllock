@@ -245,7 +245,7 @@ public class EngineerRulesTyresFuelTests
 
     [Theory]
     [InlineData("gap-ahead-catch", 240f)]
-    [InlineData("sector-purple-1", 20f)]
+    [InlineData("lap-report", 0f)]
     [InlineData("flag-blue", 30f)]
     [InlineData("tyre-cold", 120f)]
     [InlineData("rain-forecast", 600f)]

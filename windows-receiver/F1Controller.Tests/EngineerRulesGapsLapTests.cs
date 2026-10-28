@@ -155,21 +155,15 @@ public class EngineerRulesGapsLapTests
     }
 
     [Fact]
-    public void PurpleAndGreenSectors()
+    public void NoSectorCalls()
     {
+        // Replaced by the lap report
         var rules = new EngineerRules(T);
         var a = Snapshots.Make(t: 1);
         var b = Snapshots.Make(t: 2, s1: RaceTracker.SectorStatus.OverallBest);
         var c = Snapshots.Make(t: 3, s1: RaceTracker.SectorStatus.OverallBest, s2: RaceTracker.SectorStatus.PersonalBest);
-
-        var purple = Assert.Single(rules.Evaluate(a, b));
-        Assert.Equal("sector-1", purple.Key);
-        Assert.Equal("Purple sector.", purple.Text);
-        Assert.Equal(RadioPriority.Chatter, purple.Priority);
-
-        var green = Assert.Single(rules.Evaluate(b, c));
-        Assert.Equal("sector-2", green.Key);
-        Assert.Equal("Green sector.", green.Text);
+        Assert.Empty(rules.Evaluate(a, b));
+        Assert.Empty(rules.Evaluate(b, c));
     }
 
     [Fact]
