@@ -45,6 +45,10 @@ public sealed class UdpReceiver : IDisposable
     public double JitterUs => _jitterUs;
     public string? RemoteAddress { get; private set; }
 
+    private volatile int _engineerLevel = 2;
+    /// <summary>The phone's engineer chattiness from its latest ping (see <see cref="ControlPacket.ReadPingLevel"/>).</summary>
+    public int EngineerLevel { get => _engineerLevel; private set => _engineerLevel = value; }
+
     // Where the phone's packets come from; telemetry is sent back here so it
     // reuses the same socket (and NAT/firewall path) as the pongs.
     private volatile IPEndPoint? _phoneEndPoint;
@@ -117,6 +121,7 @@ public sealed class UdpReceiver : IDisposable
                 // Ping/pong: echo back immediately for RTT measurement
                 if (ControlPacket.IsPing(data) && data.Length >= ControlPacket.PingSize)
                 {
+                    EngineerLevel = ControlPacket.ReadPingLevel(data);
                     try
                     {
                         await _client.SendAsync(data.AsMemory(0, ControlPacket.PingSize),

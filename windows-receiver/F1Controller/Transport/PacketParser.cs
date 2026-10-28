@@ -19,7 +19,14 @@ public readonly record struct ControlPacket(
 
     /// <summary>Ping packets start with 0xFFFFFFFF.</summary>
     public const uint PingMarker = 0xFFFFFFFF;
-    public const int PingSize = 16; // [marker:u32][seq:u32][timestamp_us:u64]
+    public const int PingSize = 16; // [marker:u32][seq:u32][timestamp_us:u64]; echoed back as is
+
+    /// <summary>
+    /// The phone's engineer chattiness (0 Off, 1 Quiet, 2 Balanced, 3 Talkative), sent as a
+    /// 17th ping byte. Older apps send 16-byte pings: those, and any value out of range, mean Balanced.
+    /// </summary>
+    public static int ReadPingLevel(ReadOnlySpan<byte> ping) =>
+        ping.Length > PingSize && ping[PingSize] <= 3 ? ping[PingSize] : 2;
 
     /// <summary>
     /// Game state sent back to the phone (16 bytes, little-endian):

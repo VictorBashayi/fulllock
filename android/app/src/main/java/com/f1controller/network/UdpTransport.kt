@@ -124,6 +124,9 @@ class UdpTransport {
      *  also "reconnects" by itself whenever the receiver is restarted). */
     @Volatile var autoConnect: Boolean = true
 
+    /** Engineer chattiness (0 Off … 3 Talkative), sent in every ping so the receiver can pace the lap report. */
+    @Volatile var engineerLevel: () -> Int = { 2 }
+
     // ---- Internals ----
 
     /**
@@ -261,14 +264,11 @@ class UdpTransport {
 
     // Ping every 100ms
     private fun pingLoop(s: Session, addr: InetAddress, port: Int) {
-        val pingBuf = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
-        val packet = DatagramPacket(pingBuf.array(), 16, addr, port)
+        val pingBuf = ByteBuffer.allocate(PING_SIZE).order(ByteOrder.LITTLE_ENDIAN)
+        val packet = DatagramPacket(pingBuf.array(), PING_SIZE, addr, port)
 
         while (isCurrent(s)) {
-            pingBuf.clear()
-            pingBuf.putInt(PING_MARKER)
-            pingBuf.putInt(pingSeq.incrementAndGet())
-            pingBuf.putLong(System.nanoTime() / 1000L)
+            writePing(pingBuf, pingSeq.incrementAndGet(), System.nanoTime() / 1000L, engineerLevel())
 
             try {
                 s.socket.send(packet)

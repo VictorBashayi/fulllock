@@ -108,6 +108,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         sensorLogger = SensorLogger(sensorManager, sensorHandler)
         loadSettings()
+        transport.engineerLevel = { engineerSettings.level }
         engineerRadio = EngineerRadio(this, engineerSettings, lifecycleScope)
         lifecycleScope.launch { transport.radio.collect { engineerRadio.play(it) } }
         if (transport.autoConnect) transport.connect()
