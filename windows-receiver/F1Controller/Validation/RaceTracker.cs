@@ -210,11 +210,18 @@ public sealed class RaceTracker
                     LastLapMs = lastLap,
                     BestLapMs = _myBestLap,
                     DeltaMs = delta,
+                    Finished = resultStatus >= 3, // 3 finished, 4 DNF, 5 DSQ, 6 not classified, 7 retired
                 };
             }
         }
 
-        info = info with { GapAheadMs = Gap(playerIdx, info.Position, ahead: true), GapBehindMs = Gap(playerIdx, info.Position, ahead: false) };
+        info = info with
+        {
+            GapAheadMs = Gap(playerIdx, info.Position, ahead: true),
+            GapBehindMs = Gap(playerIdx, info.Position, ahead: false),
+            CarAheadIdx = info.Position == 0 ? -1 : FindByPosition(info.Position - 1),
+            CarBehindIdx = info.Position == 0 ? -1 : FindByPosition(info.Position + 1),
+        };
         Info = info;
     }
 
@@ -268,7 +275,11 @@ public sealed class RaceTracker
     }
 }
 
-/// <summary>Player timing. Times in ms; 0 / null = not available yet.</summary>
+/// <summary>
+/// Player timing. Times in ms; 0 / null = not available yet. CarAheadIdx / CarBehindIdx are
+/// the car indexes one place up / down (-1 = none). Finished: the player has a result
+/// (finished, DNF, DSQ, not classified or retired).
+/// </summary>
 public readonly record struct RaceInfo(
     byte Position,
     byte CurrentLap,
@@ -283,4 +294,7 @@ public readonly record struct RaceInfo(
     RaceTracker.SectorStatus S1Status,
     RaceTracker.SectorStatus S2Status,
     int? GapAheadMs,
-    int? GapBehindMs);
+    int? GapBehindMs,
+    int CarAheadIdx = -1,
+    int CarBehindIdx = -1,
+    bool Finished = false);

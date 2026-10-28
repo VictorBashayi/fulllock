@@ -7,16 +7,21 @@ namespace F1Controller.Engineer;
 public sealed partial class EngineerRules
 {
     // Gap to the car ahead / behind at the start of each recent lap, oldest first.
-    // Cleared when the position changes, since "ahead" is then a different car.
+    // Cleared when the position changes or a different car is ahead / behind (pit stops,
+    // retirements), since the history is then about another car.
     private readonly List<int> _gapsAhead = new();
     private readonly List<int> _gapsBehind = new();
     private byte _gapPosition;
+    private int _gapAheadCar = -1;
+    private int _gapBehindCar = -1;
 
     private void ResetGapsLap()
     {
         _gapsAhead.Clear();
         _gapsBehind.Clear();
         _gapPosition = 0;
+        _gapAheadCar = -1;
+        _gapBehindCar = -1;
     }
 
     private IEnumerable<RadioCall> GapsLap(RaceSnapshot? previous, RaceSnapshot current)
@@ -51,12 +56,12 @@ public sealed partial class EngineerRules
 
     private void Gaps(RaceInfo cur, bool newLap, List<RadioCall> calls)
     {
-        if (cur.Position != _gapPosition)
-        {
-            _gapsAhead.Clear();
-            _gapsBehind.Clear();
-            _gapPosition = cur.Position;
-        }
+        bool moved = cur.Position != _gapPosition;
+        if (moved || cur.CarAheadIdx != _gapAheadCar) _gapsAhead.Clear();
+        if (moved || cur.CarBehindIdx != _gapBehindCar) _gapsBehind.Clear();
+        _gapPosition = cur.Position;
+        _gapAheadCar = cur.CarAheadIdx;
+        _gapBehindCar = cur.CarBehindIdx;
         if (!newLap) return;
 
         if (Trend(_gapsAhead, cur.GapAheadMs, _t.CatchMaxGapMs) is float aheadRate)

@@ -26,14 +26,18 @@ internal static class Snapshots
         int? rainIn = null,
         sbyte fiaFlag = 0,
         Damage damage = default,
-        GameEvent[]? events = null)
+        GameEvent[]? events = null,
+        int carAhead = 7,
+        int carBehind = 8,
+        bool finished = false)
     {
         var timing = new RaceInfo(
             Position: position, CurrentLap: lap, Sector: 0, LapInvalid: lapInvalid,
             CurrentLapMs: 0, LastLapMs: 0, BestLapMs: bestLapMs, DeltaMs: null,
             S1: 0, S2: 0,
             S1Status: s1, S2Status: s2,
-            GapAheadMs: gapAhead, GapBehindMs: gapBehind);
+            GapAheadMs: gapAhead, GapBehindMs: gapBehind,
+            CarAheadIdx: carAhead, CarBehindIdx: carBehind, Finished: finished);
         var race = new RaceState(
             timing, TotalLaps: totalLaps, TyreCompound: 0, TyreAgeLaps: 0, FuelLaps: fuel,
             TyreWear: wear ?? new byte[] { 10, 10, 10, 10 },

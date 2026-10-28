@@ -27,7 +27,7 @@ public sealed partial class EngineerRules
         FiaFlag(previous.FiaFlag, current.FiaFlag, calls);
 
         if (current.Weather < 3 && current.RainInMinutes is int minutes && minutes <= _t.RainForecastMinutes)
-            calls.Add(new RadioCall("rain-forecast", $"Rain expected in {minutes} minutes.", RadioPriority.Important, RadioCategory.Weather));
+            calls.Add(new RadioCall("rain-forecast", RainForecastText(minutes), RadioPriority.Important, RadioCategory.Weather));
         if (previous.Weather < 3 && current.Weather >= 3)
             calls.Add(new RadioCall("rain-now", "It's raining.", RadioPriority.Important, RadioCategory.Weather));
 
@@ -48,6 +48,13 @@ public sealed partial class EngineerRules
 
         return calls;
     }
+
+    private static string RainForecastText(int minutes) => minutes switch
+    {
+        <= 0 => "Rain expected any minute now.",
+        1 => "Rain expected in 1 minute.",
+        _ => $"Rain expected in {minutes} minutes.",
+    };
 
     private static byte[] DamageParts(Damage d) => new[] { d.FrontWing, d.RearWing, d.Floor, d.Diffuser, d.Sidepod };
 

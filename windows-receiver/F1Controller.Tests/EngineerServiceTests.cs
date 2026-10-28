@@ -60,6 +60,34 @@ public class EngineerServiceTests
     }
 
     [Fact]
+    public void SmallBackwardStepIsIgnoredNotAReset()
+    {
+        // A reordered packet steps session time back a fraction of a second
+        var (service, sent) = Make();
+        service.OnSnapshot(Snapshots.Make(t: 90, fiaFlag: 0));
+        service.OnSnapshot(Snapshots.Make(t: 100, fiaFlag: 0));
+        service.OnSnapshot(Snapshots.Make(t: 99.6f, fiaFlag: 0));
+        // A reset would put this inside the warm-up and swallow it
+        service.OnSnapshot(Snapshots.Make(t: 101, fiaFlag: 4));
+        Assert.Equal("flag-red", Assert.Single(sent).Key);
+    }
+
+    [Fact]
+    public void SilentAfterChequeredFlag()
+    {
+        var (service, sent) = Make();
+        service.OnSnapshot(Snapshots.Make(t: 10, fiaFlag: 0, weather: 2));
+        service.OnSnapshot(Snapshots.Make(t: 20, fiaFlag: 3, weather: 3));  // yellow + rain: one sent, one queued
+        Assert.Single(sent);
+
+        // Crossed the line: the queued call and anything new stay unsaid on the cool-down lap
+        service.OnSnapshot(Snapshots.Make(t: 21, fiaFlag: 3, weather: 3, finished: true));
+        service.OnSnapshot(Snapshots.Make(t: 25, fiaFlag: 3, weather: 3, finished: true));
+        service.OnSnapshot(Snapshots.Make(t: 30, fiaFlag: 4, weather: 3, finished: true));
+        Assert.Single(sent);
+    }
+
+    [Fact]
     public void ErrorsAreContained()
     {
         // A failure inside the engineer must not escape into the telemetry receive loop

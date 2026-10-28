@@ -83,6 +83,27 @@ public class EngineerRulesGapsLapTests
     }
 
     [Fact]
+    public void NewCarAheadResetsGapHistory()
+    {
+        // Same position, but the car ahead pitted and a different one is now ahead
+        Assert.Null(Find(Last(new EngineerRules(T),
+            Snapshots.Make(lap: 5, position: 4, carAhead: 7, gapAhead: 2400),
+            Snapshots.Make(lap: 6, position: 4, carAhead: 7, gapAhead: 2100),
+            Snapshots.Make(lap: 7, position: 4, carAhead: 12, gapAhead: 1800)), "gap-ahead"));
+    }
+
+    [Fact]
+    public void NewCarBehindResetsOnlyBehindHistory()
+    {
+        var calls = Last(new EngineerRules(T),
+            Snapshots.Make(lap: 5, carBehind: 8, gapAhead: 2400, gapBehind: 1900),
+            Snapshots.Make(lap: 6, carBehind: 8, gapAhead: 2100, gapBehind: 1500),
+            Snapshots.Make(lap: 7, carBehind: 15, gapAhead: 1800, gapBehind: 1100));
+        Assert.Null(Find(calls, "gap-behind"));
+        Assert.NotNull(Find(calls, "gap-ahead"));
+    }
+
+    [Fact]
     public void ClosingBehind()
     {
         var call = Find(Last(new EngineerRules(T),

@@ -63,6 +63,11 @@ public class EngineerRulesFlagsTests
 
         Assert.Empty(Step(Snapshots.Make(weather: 1), Snapshots.Make(weather: 1, rainIn: 20)));
 
+        Assert.Equal("Rain expected in 1 minute.",
+            Assert.Single(Step(Snapshots.Make(weather: 1), Snapshots.Make(weather: 1, rainIn: 1))).Text);
+        Assert.Equal("Rain expected any minute now.",
+            Assert.Single(Step(Snapshots.Make(weather: 1), Snapshots.Make(weather: 1, rainIn: 0))).Text);
+
         var rain = Assert.Single(Step(Snapshots.Make(weather: 2), Snapshots.Make(weather: 3)));
         Assert.Equal("rain-now", rain.Key);
         Assert.Equal("It's raining.", rain.Text);
