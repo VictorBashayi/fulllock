@@ -10,7 +10,6 @@ public sealed partial class EngineerRules
 
     // Session time at which each tyre first went over the hot limit in its current spell; null while it is not hot.
     private readonly float?[] _hotSince = new float?[4];
-    private readonly bool[] _hotFired = new bool[4];
     // After a call a tyre stays quiet until this lap, unless it reaches the temperature it was called at + TyreHotWorseC
     private readonly int[] _hotMutedUntilLap = new int[4];
     private readonly byte[] _hotCalledAtC = new byte[4];
@@ -38,7 +37,6 @@ public sealed partial class EngineerRules
     private void ResetTyreHeat()
     {
         System.Array.Clear(_hotSince);
-        System.Array.Clear(_hotFired);
         System.Array.Clear(_hotMutedUntilLap);
         System.Array.Clear(_hotCalledAtC);
         System.Array.Clear(_surfacePeak);
@@ -93,18 +91,19 @@ public sealed partial class EngineerRules
         int lap = current.Race.Timing.CurrentLap;
         bool Muted(int i) => lap < _hotMutedUntilLap[i] && temps[i] < _hotCalledAtC[i] + _t.TyreHotWorseC;
 
+        // The mute alone decides repeats: a tyre that stays over the limit is called again once the
+        // mute runs out or it gets TyreHotWorseC hotter, without having to cool down first
         bool anyDue = false;
         for (int i = 0; i < 4 && i < temps.Length; i++)
         {
             if (temps[i] <= _t.TyreHotC)
             {
                 _hotSince[i] = null;
-                _hotFired[i] = false;
                 continue;
             }
 
             _hotSince[i] ??= current.SessionTime;
-            if (!_hotFired[i] && current.SessionTime - _hotSince[i]!.Value >= _t.TyreHotSeconds && !Muted(i))
+            if (current.SessionTime - _hotSince[i]!.Value >= _t.TyreHotSeconds && !Muted(i))
                 anyDue = true;
         }
         if (!anyDue) return;
@@ -112,9 +111,8 @@ public sealed partial class EngineerRules
         var hot = new List<int>();
         for (int i = 0; i < 4 && i < temps.Length; i++)
         {
-            if (_hotSince[i] != null && !_hotFired[i] && !Muted(i))
+            if (_hotSince[i] != null && !Muted(i))
             {
-                _hotFired[i] = true;
                 _hotMutedUntilLap[i] = lap + _t.TyreHotRepeatLaps;
                 _hotCalledAtC[i] = temps[i];
                 hot.Add(i);

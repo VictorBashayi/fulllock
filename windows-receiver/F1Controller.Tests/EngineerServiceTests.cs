@@ -133,6 +133,21 @@ public class EngineerServiceTests
     }
 
     [Fact]
+    public void FlashbackKeepsBestLapSectors()
+    {
+        var sent = new List<RadioCall>();
+        var service = new EngineerService(new EngineerThresholds(), sent.Add, level: () => 3);
+        service.OnSnapshot(Snapshots.Make(t: 10, lap: 1));
+        service.OnSnapshot(Snapshots.Make(t: 90, lap: 1, s1Ms: 25000, s2Ms: 30000));
+        service.OnSnapshot(Snapshots.Make(t: 91, lap: 2, lastLapMs: 80000, bestLapMs: 80000));
+        service.OnSnapshot(Snapshots.Make(t: 120, lap: 2, bestLapMs: 80000));
+        service.OnSnapshot(Snapshots.Make(t: 100, lap: 2, bestLapMs: 80000));   // flashback 20 s
+        service.OnSnapshot(Snapshots.Make(t: 170, lap: 2, s1Ms: 25500, s2Ms: 30000, bestLapMs: 80000));
+        service.OnSnapshot(Snapshots.Make(t: 171, lap: 3, lastLapMs: 80500, bestLapMs: 80000));
+        Assert.Equal("Lap 2, 1:20.5. Sector 1 down 0.5, sector 2 matched, sector 3 matched.", sent.Last().Text);
+    }
+
+    [Fact]
     public void ErrorsAreContained()
     {
         // A failure inside the engineer must not escape into the telemetry receive loop

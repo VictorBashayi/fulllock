@@ -17,6 +17,31 @@ public class RaceTrackerTests
         buf[o + 36] = 2;          // active
     }
 
+    private static byte[] PlayerLap(byte lap, uint lastLapMs)
+    {
+        var buf = new byte[Header + 22 * Entry];
+        Car(buf, 0, position: 1, pitStatus: 0);
+        int o = Header;
+        buf[o + 25] = lap;
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), lastLapMs);
+        return buf;
+    }
+
+    [Fact]
+    public void FlashbackKeepsBestLapRestartClearsIt()
+    {
+        var tracker = new RaceTracker();
+        tracker.Process(PlayerLap(1, 0), Header, 0, 50f);
+        tracker.Process(PlayerLap(2, 80000), Header, 0, 90f);
+        Assert.Equal(80000u, tracker.Info.BestLapMs);
+
+        tracker.Process(PlayerLap(2, 80000), Header, 0, 60f);   // flashback 30 s
+        Assert.Equal(80000u, tracker.Info.BestLapMs);
+
+        tracker.Process(PlayerLap(1, 0), Header, 0, 2f);        // restart: clock back near zero
+        Assert.Equal(0u, tracker.Info.BestLapMs);
+    }
+
     [Fact]
     public void ReadsPitStatusAndNeighboursInPit()
     {

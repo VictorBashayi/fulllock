@@ -55,13 +55,20 @@ public sealed class EngineerService
     private void Process(RaceSnapshot s)
     {
         // A packet that arrived out of order steps back a fraction of a second: skip it.
-        // A bigger step back is a restart or a flashback.
-        if (_previous != null && s.SessionUid == _previous.SessionUid
-            && s.SessionTime < _previous.SessionTime
-            && _previous.SessionTime - s.SessionTime <= _t.ReorderToleranceSeconds)
-            return;
+        // A bigger step back is a restart (the clock back near zero) or a flashback.
+        bool restart = _previous == null || s.SessionUid != _previous.SessionUid;
+        if (!restart && s.SessionTime < _previous!.SessionTime)
+        {
+            if (_previous.SessionTime - s.SessionTime <= _t.ReorderToleranceSeconds)
+                return;
+            if (s.SessionTime < _t.RestartMaxSessionSeconds)
+                restart = true;
+            else
+                _previous = null;  // flashback: keep what the engineer learned (best lap, tyre mutes),
+                                   // but don't compare across the jump, so no lap completes by it
+        }
 
-        if (_previous == null || s.SessionUid != _previous.SessionUid || s.SessionTime < _previous.SessionTime)
+        if (restart)
         {
             _rules.Reset();
             _dispatcher.Reset();

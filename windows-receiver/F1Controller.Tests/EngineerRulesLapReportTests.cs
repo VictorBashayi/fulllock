@@ -139,6 +139,14 @@ public class EngineerRulesLapReportTests
     }
 
     [Fact]
+    public void MissingLapTimeIsNotSpoken()
+    {
+        // The game can fill in the lap time a packet late: never say "0:00.0"
+        var results = Run(3, new Lap(1, 80000), new Lap(2, 0));
+        Assert.Equal("Lap 2.", Report(results[1])!.Text);
+    }
+
+    [Fact]
     public void MissingSectorTimesSkipComparison()
     {
         var results = Run(3,

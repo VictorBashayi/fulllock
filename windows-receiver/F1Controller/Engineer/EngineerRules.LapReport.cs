@@ -64,6 +64,8 @@ public sealed partial class EngineerRules
                 text.Append(_lapStartedInPit ? "Out lap." : "In lap.");
             else if (!valid)
                 text.Append($"Lap {lapNumber} deleted.");
+            else if (lapMs == 0)
+                text.Append($"Lap {lapNumber}.");  // the game hasn't filled in the time yet
             else
             {
                 if (personalBest) text.Append("Personal best. ");

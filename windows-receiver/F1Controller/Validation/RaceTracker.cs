@@ -96,11 +96,28 @@ public sealed class RaceTracker
         Info = default;
     }
 
+    private const float RestartMaxSessionSeconds = 10f;
+    private const float ReorderToleranceSeconds = 1f;
+
+    private void Rewind()
+    {
+        for (int i = 0; i < MaxCars; i++) _cars[i] = new Car();
+        _curTrace = NewTrace();
+    }
+
     /// <param name="data">The whole Lap Data packet.</param>
     public void Process(ReadOnlySpan<byte> data, int headerSize, int playerIdx, float sessionTime)
     {
-        // A new session (or restart) starts the clock again
-        if (sessionTime < _lastSessionTime) Reset();
+        // A new session or a restart starts the clock again near zero: forget everything. A
+        // flashback rewinds it mid-session: keep the bests, but the cars' distance histories and
+        // this lap's trace now run ahead of the clock, so drop those. A step back of a second or
+        // less is a packet that arrived out of order.
+        if (sessionTime < _lastSessionTime)
+        {
+            if (sessionTime < RestartMaxSessionSeconds) Reset();
+            else if (_lastSessionTime - sessionTime <= ReorderToleranceSeconds) return;
+            else Rewind();
+        }
         bool timeAdvanced = sessionTime > _lastSessionTime; // false while paused
         _lastSessionTime = sessionTime;
 

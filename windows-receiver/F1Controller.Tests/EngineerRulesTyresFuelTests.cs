@@ -135,6 +135,33 @@ public class EngineerRulesTyresFuelTests
     }
 
     [Fact]
+    public void TyreStayingHotAndClimbingIsCalledAgain()
+    {
+        // Inner temps rarely dip back under the limit: one spell that keeps getting hotter
+        var rules = new EngineerRules(T);
+        var r = Run(rules,
+            Snapshots.Make(t: 100, inner: Temps(fl: 90)),
+            Snapshots.Make(t: 101, inner: Temps(fl: 108)),
+            Snapshots.Make(t: 107, inner: Temps(fl: 108)),
+            Snapshots.Make(t: 110, inner: Temps(fl: 112)),
+            Snapshots.Make(t: 113, inner: Temps(fl: 113)));
+        Assert.Equal(new[] { 0, 0, 1, 0, 1 }, r.Select(c => c.Count(x => x.Key == "tyre-hot-FL")).ToArray());
+    }
+
+    [Fact]
+    public void TyreStillHotAfterMuteIsCalledAgain()
+    {
+        var rules = new EngineerRules(T);
+        var r = Run(rules,
+            Snapshots.Make(t: 100, lap: 5, inner: Temps(fl: 90)),
+            Snapshots.Make(t: 101, lap: 5, inner: Temps(fl: 108)),
+            Snapshots.Make(t: 107, lap: 5, inner: Temps(fl: 108)),
+            Snapshots.Make(t: 200, lap: 7, inner: Temps(fl: 108)),
+            Snapshots.Make(t: 300, lap: 8, inner: Temps(fl: 108)));
+        Assert.Equal(new[] { 0, 0, 1, 0, 1 }, r.Select(c => c.Count(x => x.Key == "tyre-hot-FL")).ToArray());
+    }
+
+    [Fact]
     public void PitStopResetsTyreMemory()
     {
         var rules = new EngineerRules(T);

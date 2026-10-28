@@ -35,6 +35,11 @@ public sealed class EngineerThresholds
     public float WarmupSeconds { get; init; } = 3f;
     /// <summary>Session time stepping back by up to this much is a reordered packet, not a restart.</summary>
     public float ReorderToleranceSeconds { get; init; } = 1f;
+    /// <summary>
+    /// Session time jumping back to below this is a restart (all memory cleared); jumping back
+    /// further than <see cref="ReorderToleranceSeconds"/> but not this far is a flashback.
+    /// </summary>
+    public float RestartMaxSessionSeconds { get; init; } = 10f;
 
     /// <summary>How long a call with this key stays quiet after being spoken. State-change calls have no cooldown.</summary>
     public float CooldownFor(string key)
