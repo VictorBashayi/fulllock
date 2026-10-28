@@ -206,6 +206,13 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             SteeringProcessor.SteeringAxis.entries.firstOrNull { it.name == name }
                 ?.let { steeringProcessor.steeringAxis = it }
         }
+        // TILT was the default before HORIZON existed: move it over once; a later manual TILT sticks
+        if (!prefs.getBoolean("axis_horizon_migrated", false) &&
+            steeringProcessor.steeringAxis == SteeringProcessor.SteeringAxis.TILT
+        ) {
+            steeringProcessor.steeringAxis = SteeringProcessor.SteeringAxis.HORIZON
+            steeringProcessor.centerOffsetRad = 0f  // measured on the old axis
+        }
     }
 
     private fun saveSettings() {
@@ -224,6 +231,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             .putFloat("deadzone", steeringProcessor.deadzoneDeg)
             .putFloat("center_offset", steeringProcessor.centerOffsetRad)
             .putString("axis", steeringProcessor.steeringAxis.name)
+            .putBoolean("axis_horizon_migrated", true)
             .apply()
     }
 

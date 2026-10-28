@@ -6,6 +6,7 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 /**
  * Phase 2: Steering Processor
@@ -19,19 +20,22 @@ import kotlin.math.min
 class SteeringProcessor {
 
     /**
-     * TILT: rotation about the screen normal, measured from the gravity direction
-     *       projected onto the screen plane. This is the "hold it like a wheel"
-     *       motion and works at any screen pitch. Assumes the fixed landscape
-     *       orientation from the manifest (device +X points up).
+     * HORIZON: angle of the phone's long edge against the horizon. Hands turn the phone
+     *       like an upright wheel while the screen is tilted back by some angle φ; this
+     *       reads that turn the same at any φ. Assumes the fixed landscape orientation from
+     *       the manifest (device +X points up).
+     * TILT: rotation about the screen normal (gravity projected onto the screen plane).
+     *       For the wheel motion above it reads 1/cos φ too much, so steering gets twitchier
+     *       the further the screen tilts back.
      * ROLL / YAW: raw Euler angles. ROLL gimbal-locks when the phone is held
      *       upright in landscape; YAW drifts (no magnetometer).
      */
-    enum class SteeringAxis { TILT, ROLL, YAW }
+    enum class SteeringAxis { HORIZON, TILT, ROLL, YAW }
 
     val madgwick = MadgwickFilter()
 
-    /** Which Euler angle to use as steering input. */
-    @Volatile var steeringAxis: SteeringAxis = SteeringAxis.TILT
+    /** Which angle to use as steering input. */
+    @Volatile var steeringAxis: SteeringAxis = SteeringAxis.HORIZON
 
     /** Half the lock-to-lock range in degrees. At this angle, output saturates at ±32767. */
     @Volatile var lockAngleDeg: Float = 60f
@@ -107,6 +111,12 @@ class SteeringProcessor {
             val kc = k.coerceIn(0f, 1f)
             return (1f - kc) * x + kc * x * x * x
         }
+
+        /** [SteeringAxis.HORIZON] from the gravity estimate in the device frame (radians, ±π/2; 0 when flat or unknown). */
+        fun horizonAngle(gx: Float, gy: Float, gz: Float): Float = atan2(gy, sqrt(gx * gx + gz * gz))
+
+        /** [SteeringAxis.TILT] from the gravity estimate in the device frame (radians). */
+        fun tiltAngle(gx: Float, gy: Float): Float = atan2(gy, gx)
     }
 
     /** Capture the current orientation as the new zero-center. */
@@ -115,7 +125,8 @@ class SteeringProcessor {
     }
 
     private fun rawAngle(): Float = when (steeringAxis) {
-        SteeringAxis.TILT -> atan2(madgwick.gravityY(), madgwick.gravityX())
+        SteeringAxis.HORIZON -> horizonAngle(madgwick.gravityX(), madgwick.gravityY(), madgwick.gravityZ())
+        SteeringAxis.TILT -> tiltAngle(madgwick.gravityX(), madgwick.gravityY())
         SteeringAxis.ROLL -> madgwick.getRollRad()
         SteeringAxis.YAW  -> madgwick.getYawRad()
     }
