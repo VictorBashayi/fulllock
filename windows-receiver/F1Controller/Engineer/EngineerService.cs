@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace F1Controller.Engineer;
 
@@ -68,7 +70,10 @@ public sealed class EngineerService
         }
 
         // Evaluate even while warming up, so rule memory reflects the current state
-        var calls = _rules.Evaluate(_previous, s, _level?.Invoke() ?? 2);
+        IEnumerable<RadioCall> calls = _rules.Evaluate(_previous, s, _level?.Invoke() ?? 2);
+        // In the pit lane only critical news gets through (and the in-lap's report, which ends there)
+        if (s.Race.Timing.PitStatus != 0)
+            calls = calls.Where(c => c.Priority == RadioPriority.Critical || c.Key == "lap-report").ToList();
         foreach (var line in _rules.TakeLogLines())
             _log?.Invoke(line);
         _previous = s;

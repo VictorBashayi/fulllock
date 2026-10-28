@@ -53,9 +53,10 @@ public sealed partial class EngineerRules
 
     private void Gaps(RaceInfo cur, bool newLap, List<RadioCall> calls)
     {
-        bool moved = cur.Position != _gapPosition;
-        if (moved || cur.CarAheadIdx != _gapAheadCar) _gapsAhead.Clear();
-        if (moved || cur.CarBehindIdx != _gapBehindCar) _gapsBehind.Clear();
+        // A pit stop (ours, or the car ahead's / behind's) moves the gap by its length without anyone catching anyone
+        bool moved = cur.Position != _gapPosition || cur.PitStatus != 0;
+        if (moved || cur.CarAheadIdx != _gapAheadCar || cur.CarAheadInPit) _gapsAhead.Clear();
+        if (moved || cur.CarBehindIdx != _gapBehindCar || cur.CarBehindInPit) _gapsBehind.Clear();
         _gapPosition = cur.Position;
         _gapAheadCar = cur.CarAheadIdx;
         _gapBehindCar = cur.CarBehindIdx;

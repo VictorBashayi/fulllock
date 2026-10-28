@@ -110,6 +110,29 @@ public class EngineerServiceTests
     }
 
     [Fact]
+    public void OnlyCriticalInPitLane()
+    {
+        var (service, sent) = Make();
+        service.OnSnapshot(Snapshots.Make(t: 10, fiaFlag: 0, pitStatus: 2));
+        service.OnSnapshot(Snapshots.Make(t: 20, fiaFlag: 3, pitStatus: 2));  // yellow: dropped
+        service.OnSnapshot(Snapshots.Make(t: 21, fiaFlag: 4, pitStatus: 2));  // red: critical
+        service.OnSnapshot(Snapshots.Make(t: 30, fiaFlag: 4, pitStatus: 0));  // out of the pit lane
+        Assert.Equal(new[] { "flag-red" }, sent.Select(c => c.Key));
+    }
+
+    [Fact]
+    public void InLapReportSurvivesPitLane()
+    {
+        var sent = new List<RadioCall>();
+        var service = new EngineerService(new EngineerThresholds(), sent.Add, level: () => 3);
+        service.OnSnapshot(Snapshots.Make(t: 10, lap: 5));
+        service.OnSnapshot(Snapshots.Make(t: 20, lap: 5, s1Ms: 25000, s2Ms: 30000, pitStatus: 1));
+        service.OnSnapshot(Snapshots.Make(t: 21, lap: 6, lastLapMs: 95000, pitStatus: 1));
+        var report = Assert.Single(sent);
+        Assert.Equal("In lap.", report.Text);
+    }
+
+    [Fact]
     public void ErrorsAreContained()
     {
         // A failure inside the engineer must not escape into the telemetry receive loop
