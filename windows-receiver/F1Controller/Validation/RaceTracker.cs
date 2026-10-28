@@ -112,6 +112,7 @@ public sealed class RaceTracker
             var e = data.Slice(headerSize + idx * LapDataEntrySize, LapDataEntrySize);
             byte resultStatus = e[36];
             _positions[idx] = resultStatus >= 2 ? e[24] : (byte)0;
+            _pitStatus[idx] = e[26];
             if (resultStatus < 2) continue; // invalid / inactive slot
 
             uint lastLap = BinaryPrimitives.ReadUInt32LittleEndian(e);
@@ -211,16 +212,22 @@ public sealed class RaceTracker
                     BestLapMs = _myBestLap,
                     DeltaMs = delta,
                     Finished = resultStatus >= 3, // 3 finished, 4 DNF, 5 DSQ, 6 not classified, 7 retired
+                    PitStatus = e[26],
+                    NumPitStops = e[27],
                 };
             }
         }
 
+        int aheadIdx = info.Position == 0 ? -1 : FindByPosition(info.Position - 1);
+        int behindIdx = info.Position == 0 ? -1 : FindByPosition(info.Position + 1);
         info = info with
         {
             GapAheadMs = Gap(playerIdx, info.Position, ahead: true),
             GapBehindMs = Gap(playerIdx, info.Position, ahead: false),
-            CarAheadIdx = info.Position == 0 ? -1 : FindByPosition(info.Position - 1),
-            CarBehindIdx = info.Position == 0 ? -1 : FindByPosition(info.Position + 1),
+            CarAheadIdx = aheadIdx,
+            CarBehindIdx = behindIdx,
+            CarAheadInPit = aheadIdx >= 0 && _pitStatus[aheadIdx] != 0,
+            CarBehindInPit = behindIdx >= 0 && _pitStatus[behindIdx] != 0,
         };
         Info = info;
     }
@@ -245,6 +252,8 @@ public sealed class RaceTracker
 
     // Race position per car index from the latest packet; 0 = inactive
     private readonly byte[] _positions = new byte[MaxCars];
+    // Pit status per car index from the latest packet: 0 none, 1 pitting, 2 in the pit area
+    private readonly byte[] _pitStatus = new byte[MaxCars];
 
     private int FindByPosition(int position)
     {
@@ -278,7 +287,8 @@ public sealed class RaceTracker
 /// <summary>
 /// Player timing. Times in ms; 0 / null = not available yet. CarAheadIdx / CarBehindIdx are
 /// the car indexes one place up / down (-1 = none). Finished: the player has a result
-/// (finished, DNF, DSQ, not classified or retired).
+/// (finished, DNF, DSQ, not classified or retired). PitStatus: 0 none, 1 pitting, 2 in the
+/// pit area; CarAheadInPit / CarBehindInPit: that car's pit status isn't 0.
 /// </summary>
 public readonly record struct RaceInfo(
     byte Position,
@@ -297,4 +307,8 @@ public readonly record struct RaceInfo(
     int? GapBehindMs,
     int CarAheadIdx = -1,
     int CarBehindIdx = -1,
-    bool Finished = false);
+    bool Finished = false,
+    byte PitStatus = 0,
+    byte NumPitStops = 0,
+    bool CarAheadInPit = false,
+    bool CarBehindInPit = false);

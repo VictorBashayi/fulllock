@@ -105,6 +105,7 @@ public sealed class TelemetryReceiver : IDisposable
     private float _fuelLaps;
     private readonly byte[] _tyreWear = new byte[4];  // %, FL FR RL RR
     private readonly byte[] _tyreTemp = new byte[4];  // surface °C, FL FR RL RR
+    private readonly byte[] _tyreInnerTemp = new byte[4];  // inner °C, FL FR RL RR
     private long _lastRaceSend;
 
     // Engineer snapshot inputs (F1 2021 only)
@@ -187,7 +188,10 @@ public sealed class TelemetryReceiver : IDisposable
                 RevLightsPercent = car[19],
             };
             for (int w = 0; w < 4; w++)
+            {
                 _tyreTemp[w] = car[30 + WheelOrder[w]];
+                _tyreInnerTemp[w] = car[34 + WheelOrder[w]];
+            }
 
             OnTelemetryReceived?.Invoke(GameSteer, GameThrottle, GameBrake);
             OnStateChanged?.Invoke(State);
@@ -282,7 +286,7 @@ public sealed class TelemetryReceiver : IDisposable
 
     private RaceState CurrentRaceState() => new(
         _race.Info, _totalLaps, _tyreCompound, _tyreAgeLaps, _fuelLaps,
-        (byte[])_tyreWear.Clone(), (byte[])_tyreTemp.Clone());
+        (byte[])_tyreWear.Clone(), (byte[])_tyreTemp.Clone(), (byte[])_tyreInnerTemp.Clone());
 
     private static bool TryParseHeader(ReadOnlySpan<byte> data, out int packetFormat,
         out byte packetId, out int headerSize, out byte playerCarIndex)
@@ -317,7 +321,10 @@ public sealed class TelemetryReceiver : IDisposable
     }
 }
 
-/// <summary>Timing and car condition for the phone's Car and Timing views. Tyre arrays are FL, FR, RL, RR.</summary>
+/// <summary>
+/// Timing and car condition for the phone's Car and Timing views (and the engineer). Tyre arrays
+/// are FL, FR, RL, RR; TyreTemp is the surface, TyreInnerTemp the inner (carcass) temperature.
+/// </summary>
 public sealed record RaceState(
     RaceInfo Timing,
     byte TotalLaps,
@@ -325,7 +332,8 @@ public sealed record RaceState(
     byte TyreAgeLaps,
     float FuelLaps,
     byte[] TyreWear,
-    byte[] TyreTemp);
+    byte[] TyreTemp,
+    byte[] TyreInnerTemp);
 
 /// <summary>Player car values shown on the phone. ErsMode: 0 none, 1 medium, 2 hotlap, 3 overtake.</summary>
 public readonly record struct GameState(
