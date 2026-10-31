@@ -78,7 +78,7 @@ public static class PadMode
                 if (now < biasUntil) { steering.AddBiasSample(r); steer = 0; }
                 else { steering.FinishBias(); calibrated = true; }
             }
-            if (calibrated) steer = steering.Process(r);
+            if (calibrated) steer = steering.Process(r, now);
 
             xinput?.SubmitPad(steer,
                 StickAxis(r.LY, invert: true), StickAxis(r.RX, invert: false), StickAxis(r.RY, invert: true),

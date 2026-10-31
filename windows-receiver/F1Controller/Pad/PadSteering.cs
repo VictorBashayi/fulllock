@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 
 namespace F1Controller.Pad;
 
@@ -11,14 +12,14 @@ public sealed class PadSteering
 {
     // Fitted on a 20 s hardware recording: filtered bank tracked the accelerometer best at
     // 12.8 LSB per °/s (16 left 6.8° rms error) and beta 0.3 (2.2° rms)
-    private const float GyroLsbPerDegSec = 12.8f;
+    public const float GyroLsbPerDegSec = 12.8f;
     private const float DegToRad = MathF.PI / 180f;
 
     private readonly PadSettings _settings;
     private readonly MadgwickFilter _filter = new() { Beta = 0.3f };
     private double _biasX, _biasY, _biasZ;
     private long _biasCount;
-    private ushort? _lastTimestamp;
+    private long? _lastArrivalTicks;
 
     public PadSteering(PadSettings settings) => _settings = settings;
 
@@ -43,10 +44,6 @@ public sealed class PadSteering
         return (short)(MathF.Sign(bankDeg) * MathF.Round(x * short.MaxValue));
     }
 
-    /// <summary>Interval between two DS4 report timestamps (u16, 16/3 µs per tick, wraps).</summary>
-    public static float DtSeconds(ushort previous, ushort current) =>
-        (ushort)(current - previous) * (16f / 3f) * 1e-6f;
-
     public void AddBiasSample(Ds4Report r)
     {
         _biasX += r.GyroX; _biasY += r.GyroY; _biasZ += r.GyroZ;
@@ -67,13 +64,15 @@ public sealed class PadSteering
     public void ResetFilter()
     {
         _filter.Reset();
-        _lastTimestamp = null;
+        _lastArrivalTicks = null;
     }
 
-    public short Process(Ds4Report r)
+    /// <param name="arrivalTicks">Stopwatch.GetTimestamp() when the report arrived. The pad's own timestamp
+    /// was measured running at ~55% of real time, which under-counted every rotation.</param>
+    public short Process(Ds4Report r, long arrivalTicks)
     {
-        float dt = _lastTimestamp is ushort last ? DtSeconds(last, r.Timestamp) : 0f;
-        _lastTimestamp = r.Timestamp;
+        float dt = _lastArrivalTicks is long last ? (float)((arrivalTicks - last) / (double)Stopwatch.Frequency) : 0f;
+        _lastArrivalTicks = arrivalTicks;
 
         float gx = (float)(r.GyroX - _biasX) / GyroLsbPerDegSec * DegToRad;
         float gy = (float)(r.GyroY - _biasY) / GyroLsbPerDegSec * DegToRad;

@@ -67,8 +67,8 @@ public class PadSteeringTests
         // Measured on hardware: right side down gives negative accel X (-30° ≈ -4096 / 7094)
         var steering = new PadSteering(Defaults);
         var r = new Ds4Report(128, 128, 128, 128, 0, 0, 0, 0, 0, 0, 0, -4096, 7094, 0, 100);
-        steering.Process(r);
-        short steer = steering.Process(r with { Timestamp = 750 });
+        steering.Process(r, Tick(0));
+        short steer = steering.Process(r, Tick(5));
         Assert.Equal(32767, steer);
         Assert.True(steering.LastBankDeg > 29f);
     }
@@ -78,17 +78,26 @@ public class PadSteeringTests
     {
         var steering = new PadSteering(Defaults);
         var banked = new Ds4Report(128, 128, 128, 128, 0, 0, 0, 0, 0, 0, 0, -4096, 7094, 0, 100);
-        for (ushort t = 0; t < 50; t++) steering.Process(banked with { Timestamp = (ushort)(t * 750) });
+        for (int t = 0; t < 50; t++) steering.Process(banked, Tick(t * 5));
 
         steering.ResetFilter();
         var flat = banked with { AccelX = 0, AccelY = 8192, Timestamp = 12345 };
-        Assert.Equal(0, steering.Process(flat));
+        Assert.Equal(0, steering.Process(flat, Tick(1000)));
     }
 
     [Fact]
-    public void TimestampWrapGivesSmallPositiveDt()
+    public void RotationIsTimedByArrivalNotThePadTimestamp()
     {
-        float dt = PadSteering.DtSeconds(65500, 100);
-        Assert.InRange(dt, 136 * 16f / 3f * 1e-6f * 0.999f, 136 * 16f / 3f * 1e-6f * 1.001f);
+        // Measured on hardware: the pad's timestamp ran at ~55% of real time, so it can't be trusted.
+        // Same timestamp on every report, 5 ms apart on the PC clock, gyro Z (bank axis) at 90 °/s for 100 ms.
+        var steering = new PadSteering(Defaults);
+        var flat = new Ds4Report(128, 128, 128, 128, 0, 0, 0, 0, 0, 0, 0, 0, 8192, 0, 100);
+        steering.Process(flat, Tick(0));
+        var turning = flat with { GyroZ = (short)(90 * PadSteering.GyroLsbPerDegSec) };
+        for (int i = 1; i <= 20; i++) steering.Process(turning, Tick(i * 5));
+        // 9° turned; the filter pulls ~3.4° back toward the (still flat) accel. Timestamp-based dt gave 0°.
+        Assert.True(MathF.Abs(steering.LastBankDeg) > 4f, $"bank {steering.LastBankDeg}");
     }
+
+    private static long Tick(double ms) => (long)(ms / 1000 * System.Diagnostics.Stopwatch.Frequency);
 }
