@@ -63,6 +63,19 @@ public class PadSettingsTests
     }
 
     [Fact]
+    public void TrySaveToUnwritablePathReportsInsteadOfThrowing()
+    {
+        // A directory can't be written as a file — stands in for a read-only or locked settings file
+        string dir = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            Assert.False(new PadSettings().TrySave(dir, out string? error));
+            Assert.False(string.IsNullOrEmpty(error));
+        }
+        finally { Directory.Delete(dir); }
+    }
+
+    [Fact]
     public void SaveThenLoadRoundTrips()
     {
         string path = Path.GetTempFileName();

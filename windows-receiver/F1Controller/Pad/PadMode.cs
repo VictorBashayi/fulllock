@@ -14,7 +14,12 @@ namespace F1Controller.Pad;
 public static class PadMode
 {
     private const double BiasSeconds = 1.0;
-    private const double ReportTimeoutMs = 100;
+    // Spec: neutral within 100 ms. The 20 ms timer really ticks every ~31 ms, so 60 ms + one late tick fits.
+    private const double ReportTimeoutMs = 60;
+
+    /// <summary>True when no report has arrived (or none for longer than the timeout).</summary>
+    public static bool IsStale(long lastReportTicks, long nowTicks) =>
+        lastReportTicks == 0 || (nowTicks - lastReportTicks) * 1000.0 / Stopwatch.Frequency > ReportTimeoutMs;
 
     /// <summary>DS4 stick byte (0..255, centre 128) → XInput axis. DS4 Y is 0 at the top, XInput Y is positive up.</summary>
     public static short StickAxis(byte raw, bool invert)
@@ -59,9 +64,14 @@ public static class PadMode
         long biasUntil = 0;
         bool calibrated = false;
         short steer = 0;
+        long previousReport = 0;
         reader.OnReport += r =>
         {
             long now = Stopwatch.GetTimestamp();
+            // Back from a dropout: start from this report's gravity, not the lean held before it
+            if (IsStale(previousReport, now)) steering.ResetFilter();
+            previousReport = now;
+
             if (!calibrated)
             {
                 if (biasUntil == 0) biasUntil = now + (long)(BiasSeconds * Stopwatch.Frequency);
@@ -75,12 +85,11 @@ public static class PadMode
                 r.L2, r.R2, r.Buttons);
         };
 
-        // Failsafe: no report for 100 ms (pad off, out of range) → release everything once
+        // Failsafe: reports stopped (pad off, out of range) → release everything once
         bool released = true;
         using var failsafe = new Timer(_ =>
         {
-            double ageMs = (Stopwatch.GetTimestamp() - reader.LastReportTicks) * 1000.0 / Stopwatch.Frequency;
-            bool stale = reader.LastReportTicks == 0 || ageMs > ReportTimeoutMs;
+            bool stale = IsStale(reader.LastReportTicks, Stopwatch.GetTimestamp());
             if (stale && !released) { xinput?.SubmitNeutral(); steer = 0; released = true; }
             else if (!stale) released = false;
         }, null, TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(20));
@@ -89,18 +98,22 @@ public static class PadMode
         var readerTask = reader.RunAsync(cts.Token);
 
         if (interactive) Console.Clear();
+        string? saveError = null;
         while (!cts.Token.IsCancellationRequested)
         {
-            if (!Console.IsInputRedirected)
-                while (Console.KeyAvailable)
-                    if (HandleKey(Console.ReadKey(intercept: true).KeyChar, settings))
-                        settings.Save(PadSettings.DefaultPath);
-
-            string status = reader.IsConnected && !released
-                ? (calibrated ? "Driving" : "Keep the pad still — calibrating…")
-                : reader.LastReportTicks != 0 ? "Pad lost — reconnecting" : "Waiting for DS4…";
             try
             {
+                // Inside the try: a console without a keyboard handle throws on KeyAvailable
+                if (!Console.IsInputRedirected)
+                    while (Console.KeyAvailable)
+                        if (HandleKey(Console.ReadKey(intercept: true).KeyChar, settings)
+                            && !settings.TrySave(PadSettings.DefaultPath, out saveError))
+                            saveError = $"Settings not saved: {saveError}";
+
+                string status = reader.IsConnected && !released
+                    ? (calibrated ? saveError ?? "Driving" : "Keep the pad still — calibrating…")
+                    : reader.LastReportTicks != 0 ? "Pad lost — reconnecting" : "Waiting for DS4…";
+
                 if (interactive) dashboard.Render(status, steer);
                 else dashboard.WriteStatusLine(status, steer);
                 await Task.Delay(interactive ? 67 : 1000, cts.Token);

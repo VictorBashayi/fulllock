@@ -74,6 +74,18 @@ public class PadSteeringTests
     }
 
     [Fact]
+    public void ResetFilterForgetsTheLeanBeforeAPadLoss()
+    {
+        var steering = new PadSteering(Defaults);
+        var banked = new Ds4Report(128, 128, 128, 128, 0, 0, 0, 0, 0, 0, 0, -4096, 7094, 0, 100);
+        for (ushort t = 0; t < 50; t++) steering.Process(banked with { Timestamp = (ushort)(t * 750) });
+
+        steering.ResetFilter();
+        var flat = banked with { AccelX = 0, AccelY = 8192, Timestamp = 12345 };
+        Assert.Equal(0, steering.Process(flat));
+    }
+
+    [Fact]
     public void TimestampWrapGivesSmallPositiveDt()
     {
         float dt = PadSteering.DtSeconds(65500, 100);

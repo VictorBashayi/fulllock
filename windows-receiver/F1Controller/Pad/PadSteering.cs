@@ -60,6 +60,16 @@ public sealed class PadSteering
         _biasCount = 0;
     }
 
+    /// <summary>
+    /// Forget orientation after a pad loss: the next report re-seeds the filter from its accelerometer,
+    /// instead of easing out of the lean held before the dropout.
+    /// </summary>
+    public void ResetFilter()
+    {
+        _filter.Reset();
+        _lastTimestamp = null;
+    }
+
     public short Process(Ds4Report r)
     {
         float dt = _lastTimestamp is ushort last ? DtSeconds(last, r.Timestamp) : 0f;

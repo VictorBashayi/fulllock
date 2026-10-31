@@ -51,6 +51,13 @@ public sealed class PadSettings
     public void Save(string path) =>
         File.WriteAllText(path, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
 
+    /// <summary>Save without throwing: a read-only or locked file must not end a drive.</summary>
+    public bool TrySave(string path, out string? error)
+    {
+        try { Save(path); error = null; return true; }
+        catch (Exception ex) { error = ex.Message; return false; }
+    }
+
     // Deadzone stays within 0..10 and at least half a degree below the lock
     private void Normalise() =>
         DeadzoneDeg = Math.Clamp(DeadzoneDeg, 0f, MathF.Min(10f, LockDeg - 0.5f));
