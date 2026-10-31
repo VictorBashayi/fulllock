@@ -62,6 +62,18 @@ public class PadSteeringTests
     }
 
     [Fact]
+    public void RightBankOnTheRealPadSteersRight()
+    {
+        // Measured on hardware: right side down gives negative accel X (-30° ≈ -4096 / 7094)
+        var steering = new PadSteering(Defaults);
+        var r = new Ds4Report(128, 128, 128, 128, 0, 0, 0, 0, 0, 0, 0, -4096, 7094, 0, 100);
+        steering.Process(r);
+        short steer = steering.Process(r with { Timestamp = 750 });
+        Assert.Equal(32767, steer);
+        Assert.True(steering.LastBankDeg > 29f);
+    }
+
+    [Fact]
     public void TimestampWrapGivesSmallPositiveDt()
     {
         float dt = PadSteering.DtSeconds(65500, 100);
