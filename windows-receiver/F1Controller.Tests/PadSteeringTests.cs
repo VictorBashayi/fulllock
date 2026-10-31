@@ -4,7 +4,7 @@ namespace F1Controller.Tests;
 
 public class PadSteeringTests
 {
-    private static readonly PadSettings Defaults = new();
+    private static readonly PadSettings Defaults = new() { LockDeg = 18f }; // pinned: these tests check the maths, not the shipped default
 
     /// <summary>Gravity of a flat, face-up pad banked by b about Z, then nose-tilted by p about X.</summary>
     private static (float x, float y, float z) Grav(float bankDeg, float pitchDeg)
@@ -48,7 +48,7 @@ public class PadSteeringTests
     [Fact]
     public void CurveMatchesPhone()
     {
-        var s = new PadSettings { Curve = 0.5f };
+        var s = new PadSettings { LockDeg = 18f, Curve = 0.5f };
         int expected = (int)MathF.Round((0.5f * 0.5f + 0.5f * 0.125f) * 32767);
         Assert.InRange(Steer(9.5f, 0, s), expected - 1, expected + 1);
     }

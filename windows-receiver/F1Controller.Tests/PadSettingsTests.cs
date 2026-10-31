@@ -5,10 +5,10 @@ namespace F1Controller.Tests;
 public class PadSettingsTests
 {
     [Fact]
-    public void DefaultsAre18_1_0()
+    public void DefaultsAre45_1_0()
     {
         var s = new PadSettings();
-        Assert.Equal((18f, 1f, 0f), (s.LockDeg, s.DeadzoneDeg, s.Curve));
+        Assert.Equal((45f, 1f, 0f), (s.LockDeg, s.DeadzoneDeg, s.Curve));
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public class PadSettingsTests
         {
             File.WriteAllText(path, "{oops");
             var s = PadSettings.Load(path);
-            Assert.Equal((18f, 1f, 0f), (s.LockDeg, s.DeadzoneDeg, s.Curve));
+            Assert.Equal((45f, 1f, 0f), (s.LockDeg, s.DeadzoneDeg, s.Curve));
         }
         finally { File.Delete(path); }
     }
@@ -59,7 +59,7 @@ public class PadSettingsTests
     public void MissingFileGivesDefaults()
     {
         var s = PadSettings.Load(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json"));
-        Assert.Equal(18f, s.LockDeg);
+        Assert.Equal(45f, s.LockDeg);
     }
 
     [Fact]

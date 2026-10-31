@@ -8,7 +8,7 @@ namespace F1Controller.Pad;
 public sealed class PadSettings
 {
     /// <summary>Bank angle (degrees) at which steering reaches full lock.</summary>
-    public float LockDeg { get; set; } = 18f;
+    public float LockDeg { get; set; } = 45f;
 
     /// <summary>Bank angle (degrees) below which steering is zero.</summary>
     public float DeadzoneDeg { get; set; } = 1f;
