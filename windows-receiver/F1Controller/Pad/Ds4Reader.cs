@@ -24,6 +24,9 @@ public sealed class Ds4Reader
     /// <summary>Stopwatch.GetTimestamp() of the last parsed report.</summary>
     public long LastReportTicks { get; private set; }
 
+    /// <summary>Battery % from the latest report.</summary>
+    public byte Battery { get; private set; }
+
     /// <summary>Why the last connection ended, for the dashboard.</summary>
     public string? LastError { get; private set; }
 
@@ -81,6 +84,7 @@ public sealed class Ds4Reader
             if (Ds4Report.TryParse(buffer.AsSpan(0, n), out var report))
             {
                 LastReportTicks = Stopwatch.GetTimestamp();
+                Battery = report.Battery;
                 OnReport?.Invoke(report);
             }
         }

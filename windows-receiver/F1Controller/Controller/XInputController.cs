@@ -54,21 +54,34 @@ public sealed class XInputController : IDisposable
         // Called from the receive loop and the failsafe timer
         lock (_submitLock)
         {
-            SubmitLocked(packet, receiveTicks);
+            // Keep Y axes centered so games don't see phantom input
+            SubmitLocked(packet, 0, 0, 0, receiveTicks);
+        }
+    }
+
+    /// <summary>
+    /// Submit a report from the DS4 pad mode: steering on the left X axis, the pad's
+    /// other stick axes passed through.
+    /// </summary>
+    public void SubmitPad(short steer, short leftY, short rightX, short rightY, byte brake, byte throttle, ushort buttons)
+    {
+        if (!IsConnected) return;
+        var packet = new Transport.ControlPacket(0, 0, steer, throttle, brake, buttons);
+        lock (_submitLock)
+        {
+            SubmitLocked(packet, leftY, rightX, rightY, Stopwatch.GetTimestamp());
         }
     }
 
     /// <summary>Centre the stick, release triggers and buttons.</summary>
     public void SubmitNeutral() => Submit(default, Stopwatch.GetTimestamp());
 
-    private void SubmitLocked(Transport.ControlPacket packet, long receiveTicks)
+    private void SubmitLocked(Transport.ControlPacket packet, short leftY, short rightX, short rightY, long receiveTicks)
     {
         _controller.SetAxisValue(Xbox360Axis.LeftThumbX, packet.Steer);
-
-        // Keep Y axes centered so games don't see phantom input
-        _controller.SetAxisValue(Xbox360Axis.LeftThumbY, 0);
-        _controller.SetAxisValue(Xbox360Axis.RightThumbX, 0);
-        _controller.SetAxisValue(Xbox360Axis.RightThumbY, 0);
+        _controller.SetAxisValue(Xbox360Axis.LeftThumbY, leftY);
+        _controller.SetAxisValue(Xbox360Axis.RightThumbX, rightX);
+        _controller.SetAxisValue(Xbox360Axis.RightThumbY, rightY);
 
         _controller.SetSliderValue(Xbox360Slider.RightTrigger, packet.Throttle);
         _controller.SetSliderValue(Xbox360Slider.LeftTrigger, packet.Brake);

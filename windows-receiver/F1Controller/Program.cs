@@ -20,6 +20,7 @@ class Program
         bool noVigem = false;
         bool noTelemetry = false;
         bool radioDemo = false;
+        bool ds4 = false;
 
         // Simple argument parsing
         for (int i = 0; i < args.Length; i++)
@@ -48,6 +49,9 @@ class Program
                 case "--radio-demo":
                     radioDemo = true;
                     break;
+                case "--ds4":
+                    ds4 = true;
+                    break;
                 case "--help":
                 case "-h":
                     PrintUsage();
@@ -71,6 +75,10 @@ class Program
         // behind it, which adds to ping RTT and input latency.
         try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High; }
         catch (Exception ex) { Console.WriteLine($"[Priority] Couldn't raise priority: {ex.Message}"); }
+
+        // Pad mode replaces the phone entirely: no UDP, discovery, telemetry or engineer
+        if (ds4)
+            return await F1Controller.Pad.PadMode.RunAsync(noVigem, interactive);
 
         Console.WriteLine("F1 Phone Controller — Windows Receiver");
         Console.WriteLine("======================================");
@@ -303,6 +311,7 @@ class Program
               --no-vigem        Disable virtual controller (transport only)
               --no-telemetry    Don't listen for game telemetry / send it to the phone
               --radio-demo      Send one sample engineer call of each priority once the phone connects
+              --ds4             Drive with a DualShock 4 held flat (bank to steer) instead of the phone
               -h, --help        Show this help
 
             Examples:
