@@ -81,7 +81,7 @@ public static class PadMode
         {
             double ageMs = (Stopwatch.GetTimestamp() - reader.LastReportTicks) * 1000.0 / Stopwatch.Frequency;
             bool stale = reader.LastReportTicks == 0 || ageMs > ReportTimeoutMs;
-            if (stale && !released) { xinput?.SubmitNeutral(); released = true; }
+            if (stale && !released) { xinput?.SubmitNeutral(); steer = 0; released = true; }
             else if (!stale) released = false;
         }, null, TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(20));
 
