@@ -71,6 +71,12 @@ class EngineerRadio(
         engine = TextToSpeech(appContext) { status ->
             scope.launch { onTtsReady(engine, status == TextToSpeech.SUCCESS) }
         }
+        // A ready callback that never comes (engine killed while connecting) leaves initializing
+        // set and the next play() can't retry, so give up on it after a while
+        scope.launch {
+            delay(INIT_TIMEOUT_MS)
+            if (engine === tts && initializing) initializing = false
+        }
         return engine
     }
 
@@ -187,13 +193,6 @@ class EngineerRadio(
         retryToken = token
         speaking = false
         tts = createEngine()
-        // A ready callback that never comes leaves initializing set; the next play() can't retry,
-        // so give up on it after a while
-        val engine = tts
-        scope.launch {
-            delay(INIT_TIMEOUT_MS)
-            if (engine === tts && initializing) initializing = false
-        }
     }
 
     private fun spoken(engine: TextToSpeech, utteranceId: String) = onEngineEvent(engine) {
