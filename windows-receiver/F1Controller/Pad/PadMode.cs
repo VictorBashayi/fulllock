@@ -59,6 +59,7 @@ public static class PadMode
         var settings = PadSettings.Load(PadSettings.DefaultPath);
         var steering = new PadSteering(settings);
         var reader = new Ds4Reader();
+        if (xinput != null) xinput.OnRumble += reader.SetRumble;
 
         // Reader thread only: bias window on the first connection, then steer every report
         long biasUntil = 0;

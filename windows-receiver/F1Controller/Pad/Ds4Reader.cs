@@ -30,6 +30,13 @@ public sealed class Ds4Reader
     /// <summary>Why the last connection ended, for the dashboard.</summary>
     public string? LastError { get; private set; }
 
+    // Rumble wanted by the game, packed heavy<<8 | light, and the value last written to the pad (-1 = unknown)
+    private int _rumble;
+    private int _rumbleSent = -1;
+
+    /// <summary>Ask for rumble. Sent from the read thread on its next report. USB only.</summary>
+    public void SetRumble(byte heavy, byte light) => Volatile.Write(ref _rumble, heavy << 8 | light);
+
     // HID reads block, so the loop gets its own thread instead of the caller's
     public Task RunAsync(CancellationToken ct) => Task.Run(() => RunLoopAsync(ct), CancellationToken.None);
 
@@ -66,27 +73,49 @@ public sealed class Ds4Reader
         var buffer = new byte[device.GetMaxInputReportLength()];
         if (IsBluetooth) RequestFullReports(device, stream);
         IsConnected = true;
+        _rumbleSent = -1; // fresh connection: the pad's motors are in an unknown state
 
-        while (!ct.IsCancellationRequested)
+        try
         {
-            int n;
-            try { n = stream.Read(buffer, 0, buffer.Length); }
-            catch (TimeoutException) { continue; }   // no report yet; the failsafe watches LastReportTicks
-            if (n <= 0) continue;
-
-            // Over Bluetooth the pad starts in reduced mode (0x01, no motion data) until asked for 0x11
-            if (IsBluetooth && buffer[0] == 0x01)
+            while (!ct.IsCancellationRequested)
             {
-                RequestFullReports(device, stream);
-                continue;
+                ReadOne(device, stream, buffer);
+                SendRumbleIfChanged(stream, Volatile.Read(ref _rumble));
             }
+        }
+        finally
+        {
+            // Leaving (quit or error): don't leave the motors spinning
+            try { SendRumbleIfChanged(stream, 0); } catch { /* pad already gone */ }
+        }
+    }
 
-            if (Ds4Report.TryParse(buffer.AsSpan(0, n), out var report))
-            {
-                LastReportTicks = Stopwatch.GetTimestamp();
-                Battery = report.Battery;
-                OnReport?.Invoke(report);
-            }
+    private void SendRumbleIfChanged(HidStream stream, int wanted)
+    {
+        if (IsBluetooth || wanted == _rumbleSent) return;
+        stream.Write(Ds4Output.UsbRumble((byte)(wanted >> 8), (byte)wanted));
+        _rumbleSent = wanted;
+    }
+
+    private void ReadOne(HidDevice device, HidStream stream, byte[] buffer)
+    {
+        int n;
+        try { n = stream.Read(buffer, 0, buffer.Length); }
+        catch (TimeoutException) { return; }   // no report yet; the failsafe watches LastReportTicks
+        if (n <= 0) return;
+
+        // Over Bluetooth the pad starts in reduced mode (0x01, no motion data) until asked for 0x11
+        if (IsBluetooth && buffer[0] == 0x01)
+        {
+            RequestFullReports(device, stream);
+            return;
+        }
+
+        if (Ds4Report.TryParse(buffer.AsSpan(0, n), out var report))
+        {
+            LastReportTicks = Stopwatch.GetTimestamp();
+            Battery = report.Battery;
+            OnReport?.Invoke(report);
         }
     }
 

@@ -31,7 +31,11 @@ public sealed class XInputController : IDisposable
         // Default is to submit a report on every Set* call (~20 IRPs per packet).
         // Batch them and submit once.
         _controller.AutoSubmitReport = false;
+        _controller.FeedbackReceived += (_, e) => OnRumble?.Invoke(e.LargeMotor, e.SmallMotor);
     }
+
+    /// <summary>The game set the rumble motors: (large/heavy, small/light), 0..255. Raised on a ViGEm thread.</summary>
+    public event Action<byte, byte>? OnRumble;
 
     /// <summary>Plug in the virtual controller. Must be called before Submit.</summary>
     public void Connect()
