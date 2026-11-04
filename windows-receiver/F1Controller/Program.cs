@@ -105,6 +105,8 @@ class Program
         XInputController? xinput = null;
         if (!noVigem)
         {
+            if (!Drivers.ViGEmBusInstalled)
+                return Drivers.ReportViGEmMissing(interactive);
             try
             {
                 xinput = new XInputController();
@@ -112,10 +114,7 @@ class Program
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ViGEm] Failed to initialize: {ex.Message}");
-                Console.WriteLine("[ViGEm] Is ViGEmBus driver installed? https://github.com/nefarius/ViGEmBus/releases");
-                Console.WriteLine("[ViGEm] Continuing without virtual controller...");
-                xinput = null;
+                return Drivers.ReportViGEmMissing(interactive, $"Failed to initialize: {ex.Message}");
             }
         }
 

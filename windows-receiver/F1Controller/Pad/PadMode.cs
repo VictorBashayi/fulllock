@@ -29,6 +29,14 @@ public static class PadMode
         return (short)Math.Clamp(v, short.MinValue, short.MaxValue);
     }
 
+    private const double NoPadHintSeconds = 3.0;
+
+    /// <summary>Status before the first report: after a few seconds, say what usually fixes it.</summary>
+    public static string WaitingStatus(double secondsWaiting) =>
+        secondsWaiting < NoPadHintSeconds
+            ? "Waiting for DS4…"
+            : "No DualShock 4 found. Plug it in with a USB data cable, and close DS4Windows / Steam Input if they're running.";
+
     public static async Task<int> RunAsync(bool noVigem, bool interactive)
     {
         using var cts = new CancellationTokenSource();
@@ -43,6 +51,8 @@ public static class PadMode
         XInputController? xinput = null;
         if (!noVigem)
         {
+            if (!Drivers.ViGEmBusInstalled)
+                return Drivers.ReportViGEmMissing(interactive);
             try
             {
                 xinput = new XInputController();
@@ -50,9 +60,7 @@ public static class PadMode
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ViGEm] Failed to initialize: {ex.Message}");
-                Console.WriteLine("[ViGEm] Is ViGEmBus driver installed? https://github.com/nefarius/ViGEmBus/releases");
-                xinput = null;
+                return Drivers.ReportViGEmMissing(interactive, $"Failed to initialize: {ex.Message}");
             }
         }
 
@@ -104,6 +112,7 @@ public static class PadMode
 
         if (interactive) Console.Clear();
         string? saveError = null;
+        var waiting = Stopwatch.StartNew();
         while (!cts.Token.IsCancellationRequested)
         {
             try
@@ -117,7 +126,7 @@ public static class PadMode
 
                 string status = reader.IsConnected && !released
                     ? (calibrated ? saveError ?? "Driving" : "Keep the pad still — calibrating…")
-                    : reader.LastReportTicks != 0 ? "Pad lost — reconnecting" : "Waiting for DS4…";
+                    : reader.LastReportTicks != 0 ? "Pad lost — reconnecting" : WaitingStatus(waiting.Elapsed.TotalSeconds);
 
                 if (interactive) dashboard.Render(status, steer);
                 else dashboard.WriteStatusLine(status, steer);
