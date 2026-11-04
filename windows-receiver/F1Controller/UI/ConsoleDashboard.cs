@@ -55,7 +55,7 @@ public sealed class ConsoleDashboard
 
         _sb.Clear();
         _sb.AppendLine("╔═══════════════════════════════════════════════╗");
-        _sb.AppendLine("║   F1 Phone Controller — Windows Receiver      ║");
+        _sb.AppendLine("║   FullLock — Windows Receiver                 ║");
         _sb.AppendLine("╠═══════════════════════════════════════════════╣");
         _sb.AppendLine($"║  Status:       {Pad(status, 30)} ║");
         _sb.AppendLine($"║  Phone IP:     {Pad(phoneIp, 30)} ║");

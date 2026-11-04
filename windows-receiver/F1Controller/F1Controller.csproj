@@ -4,7 +4,9 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>F1Controller</RootNamespace>
-    <AssemblyName>F1Controller</AssemblyName>
+    <AssemblyName>FullLock</AssemblyName>
+    <Product>FullLock</Product>
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../VERSION').Trim())</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

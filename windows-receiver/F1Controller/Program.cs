@@ -68,7 +68,7 @@ class Program
         {
             Console.Clear();
             Console.CursorVisible = false;
-            Console.Title = "F1 Phone Controller — Windows Receiver";
+            Console.Title = "FullLock — Windows Receiver";
         }
 
         // The game saturates CPU/GPU; at normal priority our receive loop waits
@@ -80,8 +80,8 @@ class Program
         if (ds4)
             return await F1Controller.Pad.PadMode.RunAsync(noVigem, interactive);
 
-        Console.WriteLine("F1 Phone Controller — Windows Receiver");
-        Console.WriteLine("======================================");
+        Console.WriteLine("FullLock — Windows Receiver");
+        Console.WriteLine("===========================");
         Console.WriteLine($"  Port:       {port} (announced on UDP {ControlPacket.DiscoveryPort} so the phone finds this PC)");
         Console.WriteLine($"  ViGEm:      {(noVigem ? "disabled" : "enabled")}");
         Console.WriteLine($"  Telemetry:  {(noTelemetry && !validate ? "off" : "F1 game UDP on 20777 → phone dashboard")}");
@@ -300,9 +300,9 @@ class Program
     private static void PrintUsage()
     {
         Console.WriteLine("""
-            F1 Phone Controller — Windows Receiver
+            FullLock — Windows Receiver
 
-            Usage: F1Controller.exe [options]
+            Usage: FullLock.exe [options]
 
             Options:
               --port <N>        UDP listen port (default: 5555)
@@ -315,10 +315,10 @@ class Program
               -h, --help        Show this help
 
             Examples:
-              F1Controller.exe                         Normal mode
-              F1Controller.exe --port 6000             Custom port
-              F1Controller.exe --validate              With F1 telemetry correlation
-              F1Controller.exe --no-vigem --log-transport   Transport diagnostics only
+              FullLock.exe                             Normal mode
+              FullLock.exe --port 6000                 Custom port
+              FullLock.exe --validate                  With F1 telemetry correlation
+              FullLock.exe --no-vigem --log-transport   Transport diagnostics only
             """);
     }
 }

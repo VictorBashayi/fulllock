@@ -4,16 +4,20 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// One version for the Windows receiver and the app: repo-root VERSION (e.g. 1.0.0)
+val appVersion = rootProject.file("../VERSION").readText().trim()
+val appVersionCode = appVersion.split(".").map { it.toInt() }.let { (major, minor, patch) -> major * 10000 + minor * 100 + patch }
+
 android {
     namespace = "com.f1controller"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.f1controller"
+        applicationId = "io.github.victorbashayi.fulllock"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersion
     }
 
     buildTypes {

@@ -30,7 +30,7 @@ public sealed class PadDashboard
 
         _sb.Clear();
         _sb.AppendLine("╔═══════════════════════════════════════════════╗");
-        _sb.AppendLine("║   F1 Controller — DS4 pad mode                ║");
+        _sb.AppendLine("║   FullLock — DS4 pad mode                     ║");
         _sb.AppendLine("╠═══════════════════════════════════════════════╣");
         _sb.AppendLine($"║  Status:       {Pad(status, 30)} ║");
         _sb.AppendLine($"║  Link:         {Pad(link, 30)} ║");

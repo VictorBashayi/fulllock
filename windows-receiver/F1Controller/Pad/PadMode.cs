@@ -34,8 +34,8 @@ public static class PadMode
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
-        Console.WriteLine("F1 Controller — DS4 pad mode");
-        Console.WriteLine("============================");
+        Console.WriteLine("FullLock — DS4 pad mode");
+        Console.WriteLine("=======================");
         foreach (var name in new[] { "DS4Windows", "JoyShockMapper" })
             if (Process.GetProcessesByName(name).Length > 0)
                 Console.WriteLine($"[Warning] {name} is running — close it, it will fight over the pad.");
