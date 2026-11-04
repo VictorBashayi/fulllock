@@ -53,3 +53,8 @@ Thumbs.db
 # Installer build output and downloaded driver installers
 installer/out/
 installer/deps/
+
+# Android release signing (never commit)
+*.jks
+*.keystore
+keystore.properties

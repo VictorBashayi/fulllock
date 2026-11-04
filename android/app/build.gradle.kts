@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,6 +9,15 @@ plugins {
 // One version for the Windows receiver and the app: repo-root VERSION (e.g. 1.0.0)
 val appVersion = rootProject.file("../VERSION").readText().trim()
 val appVersionCode = appVersion.split(".").map { it.toInt() }.let { (major, minor, patch) -> major * 10000 + minor * 100 + patch }
+
+// Release signing: FULLLOCK_* environment variables (CI) or android/keystore.properties (local, gitignored).
+// Without them the release APK is built unsigned, so anyone can still build the project.
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun signingValue(name: String): String? = System.getenv(name) ?: keystoreProps.getProperty(name)
+val releaseKeystore = signingValue("FULLLOCK_KEYSTORE")
 
 android {
     namespace = "com.f1controller"
@@ -20,8 +31,20 @@ android {
         versionName = appVersion
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = signingValue("FULLLOCK_KEYSTORE_PASSWORD")
+                keyAlias = signingValue("FULLLOCK_KEY_ALIAS")
+                keyPassword = signingValue("FULLLOCK_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -80,4 +103,13 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+// Release APK named FullLock-<version>.apk
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.outputs.forEach { output ->
+            (output as? com.android.build.api.variant.impl.VariantOutputImpl)?.outputFileName?.set("FullLock-$appVersion.apk")
+        }
+    }
 }
