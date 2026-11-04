@@ -49,3 +49,7 @@ Thumbs.db
 
 # Downloaded archives (Gradle distributions etc.)
 *.zip
+
+# Installer build output and downloaded driver installers
+installer/out/
+installer/deps/
