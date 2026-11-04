@@ -21,6 +21,7 @@ class Program
         bool noTelemetry = false;
         bool radioDemo = false;
         bool ds4 = false;
+        bool hidHideCleanup = false;
 
         // Simple argument parsing
         for (int i = 0; i < args.Length; i++)
@@ -52,6 +53,9 @@ class Program
                 case "--ds4":
                     ds4 = true;
                     break;
+                case "--hidhide-cleanup":
+                    hidHideCleanup = true;
+                    break;
                 case "--help":
                 case "-h":
                     PrintUsage();
@@ -61,6 +65,13 @@ class Program
                     PrintUsage();
                     return 1;
             }
+        }
+
+        // Uninstaller: undo FullLock's HidHide changes and remove it from the whitelist
+        if (hidHideCleanup)
+        {
+            F1Controller.Pad.PadMode.CreateHidHideGuard(AppPaths.Default, Console.WriteLine)?.Cleanup();
+            return 0;
         }
 
         bool interactive = !Console.IsOutputRedirected;
@@ -313,6 +324,7 @@ class Program
               --no-telemetry    Don't listen for game telemetry / send it to the phone
               --radio-demo      Send one sample engineer call of each priority once the phone connects
               --ds4             Drive with a DualShock 4 held flat (bank to steer) instead of the phone
+              --hidhide-cleanup Undo FullLock's HidHide changes (used by the uninstaller)
               -h, --help        Show this help
 
             Examples:

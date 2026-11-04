@@ -21,7 +21,7 @@ public sealed class PadDashboard
         _xinput = xinput;
     }
 
-    public void Render(string status, short steer)
+    public void Render(string status, short steer, string? notice = null)
     {
         double steerPct = steer * 100.0 / short.MaxValue;
         string link = _reader.IsConnected
@@ -49,6 +49,7 @@ public sealed class PadDashboard
         _sb.AppendLine("  Press Ctrl+C to exit");
         // Always written, padded, so a note that went away doesn't linger on screen
         _sb.AppendLine(Pad(status.Length > 30 ? "  " + status : "", NoteWidth));
+        _sb.AppendLine(Pad(notice != null ? "  " + notice : "", NoteWidth));
 
         try { Console.SetCursorPosition(0, 0); }
         catch { Console.Clear(); }

@@ -1,9 +1,11 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using F1Controller.Controller;
+using F1Controller.Pad.HidHide;
 
 namespace F1Controller.Pad;
 
@@ -36,6 +38,18 @@ public static class PadMode
         secondsWaiting < NoPadHintSeconds
             ? "Waiting for DS4…"
             : "No DualShock 4 found. Plug it in with a USB data cable, and close DS4Windows / Steam Input if they're running.";
+
+    /// <summary>The HidHide guard for this exe, or null (with a hint logged) when HidHide isn't installed.</summary>
+    public static HidHideGuard? CreateHidHideGuard(AppPaths paths, Action<string> log)
+    {
+        var cli = HidHideCli.Locate();
+        if (cli == null)
+        {
+            log("[HidHide] Not installed — games may see your DS4 twice. Get it: " + Drivers.HidHideUrl);
+            return null;
+        }
+        return new HidHideGuard(cli, Environment.ProcessPath!, paths.HidHideStateFile, log);
+    }
 
     public static async Task<int> RunAsync(bool noVigem, bool interactive)
     {
@@ -72,6 +86,19 @@ public static class PadMode
         var steering = new PadSteering(settings);
         var reader = new Ds4Reader();
         if (xinput != null) xinput.OnRumble += reader.SetRumble;
+
+        // HidHide messages: the dashboard redraws the whole screen, so show them in its notice line
+        string? notice = null;
+        Action<string> log = interactive ? s => notice = s : Console.WriteLine;
+        HidHideGuard? guard = xinput != null ? CreateHidHideGuard(paths, log) : null;
+        guard?.RestorePending();
+        if (guard != null) reader.OnConnected += p => guard.EnsureHidden(HidHidePaths.ToInstancePath(p));
+        // Console window closed: Windows gives us ~5 s, enough to un-hide the pad
+        using var onClose = PosixSignalRegistration.Create(PosixSignal.SIGHUP, ctx =>
+        {
+            guard?.Restore();
+            cts.Cancel();
+        });
 
         // Reader thread only: bias window on the first connection, then steer every report
         long biasUntil = 0;
@@ -128,7 +155,7 @@ public static class PadMode
                     ? (calibrated ? saveError ?? "Driving" : "Keep the pad still — calibrating…")
                     : reader.LastReportTicks != 0 ? "Pad lost — reconnecting" : WaitingStatus(waiting.Elapsed.TotalSeconds);
 
-                if (interactive) dashboard.Render(status, steer);
+                if (interactive) dashboard.Render(status, steer, notice);
                 else dashboard.WriteStatusLine(status, steer);
                 await Task.Delay(interactive ? 67 : 1000, cts.Token);
             }
@@ -137,6 +164,7 @@ public static class PadMode
         }
 
         await readerTask;
+        guard?.Restore();
         xinput?.Dispose();
         if (interactive) Console.CursorVisible = true;
         Console.WriteLine();
