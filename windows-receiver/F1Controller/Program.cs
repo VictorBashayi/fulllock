@@ -87,6 +87,8 @@ class Program
         Console.WriteLine($"  Telemetry:  {(noTelemetry && !validate ? "off" : "F1 game UDP on 20777 → phone dashboard")}");
         Console.WriteLine($"  Validate:   {(validate ? "yes" : "no")}");
         Console.WriteLine($"  Log CSV:    {(logTransport ? "yes" : "no")}");
+        AppPaths.Default.EnsureCreated();
+        Console.WriteLine($"  Logs:       {AppPaths.Default.LogsDir}");
         Console.WriteLine();
 
         using var cts = new CancellationTokenSource();
@@ -135,7 +137,7 @@ class Program
         if (telemetry != null && !noTelemetry)
         {
             // Every call (and any engineer error) also goes to a log file for reviewing the race
-            var callLogWriter = new StreamWriter($"engineer_log_{DateTime.Now:yyyyMMdd_HHmmss}.txt", append: false);
+            var callLogWriter = new StreamWriter(AppPaths.Default.LogFile("engineer_log", "txt"), append: false);
             disposables.Add(callLogWriter);
             var callLog = new CallLog(callLogWriter);
             var engineer = new EngineerService(new EngineerThresholds(),

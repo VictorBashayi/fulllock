@@ -56,7 +56,11 @@ public static class PadMode
             }
         }
 
-        var settings = PadSettings.Load(PadSettings.DefaultPath);
+        var paths = AppPaths.Default;
+        paths.EnsureCreated();
+        if (paths.MigrateLegacySettings())
+            Console.WriteLine($"[Settings] Moved your pad settings to {paths.PadSettingsFile}");
+        var settings = PadSettings.Load(paths.PadSettingsFile);
         var steering = new PadSteering(settings);
         var reader = new Ds4Reader();
         if (xinput != null) xinput.OnRumble += reader.SetRumble;
@@ -108,7 +112,7 @@ public static class PadMode
                 if (!Console.IsInputRedirected)
                     while (Console.KeyAvailable)
                         if (HandleKey(Console.ReadKey(intercept: true).KeyChar, settings)
-                            && !settings.TrySave(PadSettings.DefaultPath, out saveError))
+                            && !settings.TrySave(paths.PadSettingsFile, out saveError))
                             saveError = $"Settings not saved: {saveError}";
 
                 string status = reader.IsConnected && !released

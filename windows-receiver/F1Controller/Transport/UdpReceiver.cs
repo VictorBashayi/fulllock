@@ -86,7 +86,7 @@ public sealed class UdpReceiver : IDisposable
 
         if (_logTransport)
         {
-            var logPath = $"transport_log_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+            var logPath = AppPaths.Default.LogFile("transport_log", "csv");
             _csvWriter = new StreamWriter(logPath, append: false);
             _csvWriter.WriteLine("timestamp,seq,jitter_us,loss_pct,pps");
         }
