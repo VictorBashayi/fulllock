@@ -63,7 +63,7 @@ Write these to `docs/protocol/pairing-test-vectors.md` in Task 2; both suites as
 - [ ] **Step 2:** `dotnet test windows-receiver/F1Controller.sln` → the +∞/1e30 cases FAIL (IndexOutOfRange), HandleSafely doesn't compile.
 - [ ] **Step 3: Implement.** RaceTracker: guard `float.IsFinite(lapDist) && lapDist >= 0` before computing `bin`, and require `bin >= 0 && bin < MaxBins - 1`. TelemetryReceiver: add `HandleSafely`, call it from `RunAsync` instead of `Handle`.
 - [ ] **Step 4: Installer.** `FullLock.iss` `[Setup]`: `DisableDirPage=yes` (DefaultDirName stays `{autopf}\FullLock`; also add `UsePreviousAppDir=no` so an old custom dir is not reused). Firewall add rule: append `localport=5555,20777 remoteip=localsubnet` to the netsh parameters. Note in README (Task 10) that `--port` other than 5555 needs a manual firewall rule.
-- [ ] **Step 5: Hygiene.** `.gitignore` add `*.pem`, `*.key`, `*.p12`, `*.pfx`, `.env`. Remove `<AllowUnsafeBlocks>` (no `unsafe`/`fixed` in the codebase) — keep removed only if build + tests pass. Replace the MAC `<DS4-MAC>` in the parent plan line 273 with `<DS4 MAC>`.
+- [ ] **Step 5: Hygiene.** `.gitignore` add `*.pem`, `*.key`, `*.p12`, `*.pfx`, `.env`. Remove `<AllowUnsafeBlocks>` (no `unsafe`/`fixed` in the codebase) — keep removed only if build + tests pass. Replace the DS4 MAC address in the parent plan line 273 with `<DS4 MAC>`.
 - [ ] **Step 6:** `dotnet test windows-receiver/F1Controller.sln` → all pass. Build installer with the existing `installer/build.ps1` → succeeds.
 - [ ] **Step 7: Commit** `git add -A windows-receiver installer .gitignore docs/security docs/superpowers/plans/2026-11-04-fulllock-v1-release.md` → `fix: audit #5 #6, firewall scope, repo hygiene`.
 
