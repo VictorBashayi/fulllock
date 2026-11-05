@@ -5,12 +5,14 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
+using F1Controller.Security;
 
 namespace F1Controller.Transport;
 
 /// <summary>
 /// High-performance UDP receiver for phone controller packets.
-/// Handles control packets (18 bytes) and ping/pong RTT measurement (16 bytes).
+/// Every datagram must pass <see cref="Session.Accept"/> (sealed control = 18 B payload,
+/// ping = 25 B payload); pongs and telemetry to the phone are sealed too.
 /// </summary>
 public sealed class UdpReceiver : IDisposable
 {
@@ -23,6 +25,7 @@ public sealed class UdpReceiver : IDisposable
 
     private readonly int _port;
     private readonly bool _logTransport;
+    private readonly Session _session;
     private UdpClient? _client;
     private StreamWriter? _csvWriter;
 
@@ -43,15 +46,17 @@ public sealed class UdpReceiver : IDisposable
         ? _packetsLost * 100.0 / _totalExpected
         : 0;
     public double JitterUs => _jitterUs;
-    public string? RemoteAddress { get; private set; }
+    public string? RemoteAddress => _session.ActiveEndPoint?.Address.ToString();
+    public Session Session => _session;
+    public long RejectedPackets => _session.RejectedPackets;
+    /// <summary>Actual UDP port once <see cref="RunAsync"/> has bound the socket (0 before).</summary>
+    public int BoundPort => _boundPort;
+    private volatile int _boundPort;
 
     private volatile int _engineerLevel = 2;
     /// <summary>The phone's engineer chattiness from its latest ping (see <see cref="ControlPacket.ReadPingLevel"/>).</summary>
     public int EngineerLevel { get => _engineerLevel; private set => _engineerLevel = value; }
 
-    // Where the phone's packets come from; telemetry is sent back here so it
-    // reuses the same socket (and NAT/firewall path) as the pongs.
-    private volatile IPEndPoint? _phoneEndPoint;
     public ControlPacket LastPacket { get; private set; }
 
     /// <summary>True while control packets keep arriving (within <see cref="LinkTimeout"/>).</summary>
@@ -71,8 +76,9 @@ public sealed class UdpReceiver : IDisposable
     private int _ppsCounter;
     private long _ppsWindowStart;
 
-    public UdpReceiver(int port, bool logTransport)
+    public UdpReceiver(int port, bool logTransport, Session session)
     {
+        _session = session;
         _port = port;
         _logTransport = logTransport;
     }
@@ -80,6 +86,7 @@ public sealed class UdpReceiver : IDisposable
     public async Task RunAsync(CancellationToken ct)
     {
         _client = new UdpClient(_port);
+        _boundPort = ((IPEndPoint)_client.Client.LocalEndPoint!).Port;
         _client.Client.ReceiveBufferSize = 65536; // 64KB receive buffer
         if (OperatingSystem.IsWindows())
             _client.Client.IOControl(SIO_UDP_CONNRESET, new byte[4], null);
@@ -115,45 +122,44 @@ public sealed class UdpReceiver : IDisposable
 
                 long receiveTicks = Stopwatch.GetTimestamp();
                 var data = result.Buffer;
-                RemoteAddress = result.RemoteEndPoint.Address.ToString();
-                _phoneEndPoint = result.RemoteEndPoint;
 
-                // Ping/pong: echo back immediately for RTT measurement
-                if (ControlPacket.IsPing(data) && data.Length >= ControlPacket.PingSize)
+                var accepted = _session.Accept(data, result.RemoteEndPoint, out int payloadLength);
+                if (accepted == AcceptResult.Rejected)
+                    continue;
+                var payload = data[..payloadLength]; // array, not Span: this is an async method
+
+                // Ping/pong: sealed pong back for RTT measurement
+                if (accepted == AcceptResult.Ping)
                 {
-                    EngineerLevel = ControlPacket.ReadPingLevel(data);
+                    EngineerLevel = ControlPacket.ReadPingLevel(payload);
                     try
                     {
-                        await _client.SendAsync(data.AsMemory(0, ControlPacket.PingSize),
-                            result.RemoteEndPoint, ct);
+                        var pong = _session.BuildPong(payload);
+                        await _client.SendAsync(pong, result.RemoteEndPoint, ct);
                     }
                     catch (OperationCanceledException) { break; }
                     catch (SocketException) { }
+                    catch (InvalidOperationException) { } // PC send counter exhausted: skip the pong
                     continue;
                 }
 
-                if (data.Length < ControlPacket.Size)
-                    continue;
+                var packet = ControlPacket.Parse(payload);
 
-                var packet = ControlPacket.Parse(data);
-
-                // Sequence tracking for packet loss. Signed 32-bit delta handles
-                // wrap-around; late/duplicate packets (delta <= 0) are dropped so a
-                // stale value can't overwrite newer input; a large jump means the
-                // phone reconnected and restarted its counter.
+                // The session already rejects stale/replayed datagrams, so sequence
+                // numbers only move forward within one phone; a new phone starts fresh.
+                if (accepted == AcceptResult.ControlNewPhone)
+                    _lastSeq = null;
                 if (_lastSeq is uint last)
                 {
                     int delta = unchecked((int)(packet.Sequence - last));
-                    if (delta <= 0 && delta > -1000)
-                        continue;
-                    if (delta > 0 && delta < 1000)
+                    if (delta > 0)
                     {
                         _packetsLost += delta - 1;
                         _totalExpected += delta;
                     }
                     else
                     {
-                        _totalExpected += 1; // counter reset
+                        _totalExpected += 1; // phone restarted its counter under the same nonce
                     }
                 }
                 else
@@ -207,12 +213,14 @@ public sealed class UdpReceiver : IDisposable
     public void SendToPhone(byte[] data)
     {
         var client = _client;
-        var phone = _phoneEndPoint;
+        var phone = _session.ActiveEndPoint;
         if (client == null || phone == null || !IsReceiving)
             return;
         try
         {
-            client.Send(data, data.Length, phone);
+            var sealedData = _session.SealForActive(data);
+            if (sealedData != null)
+                client.Send(sealedData, sealedData.Length, phone);
         }
         catch (SocketException) { }
         catch (ObjectDisposedException) { }
