@@ -18,3 +18,16 @@ fun writePing(buf: ByteBuffer, seq: Int, timestampUs: Long, level: Int) {
     buf.putLong(timestampUs)
     buf.put(level.coerceIn(0, 3).toByte())
 }
+
+/** v2 ping payload: [FFFFFFFF][seq:u32][ts_us:u64][level:u8][phoneNonce:8]; sealed by PacketAuth before sending. */
+const val PING_PAYLOAD_SIZE = 25
+
+fun writePing(buf: ByteBuffer, seq: Int, timestampUs: Long, level: Int, nonce: ByteArray) {
+    require(nonce.size == 8) { "nonce must be 8 bytes" }
+    buf.clear()
+    buf.putInt(PING_MARKER)
+    buf.putInt(seq)
+    buf.putLong(timestampUs)
+    buf.put(level.coerceIn(0, 3).toByte())
+    buf.put(nonce)
+}

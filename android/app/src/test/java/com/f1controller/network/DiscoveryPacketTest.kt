@@ -8,12 +8,25 @@ import org.junit.Test
 
 class DiscoveryPacketTest {
 
-    /** Same bytes as the receiver's DiscoveryBeaconTests.WritesMarkerTagAndPort. */
+    /** v2 beacon. */
     private val beacon = byteArrayOf(
         0xFB.toByte(), -1, -1, -1,
-        'F'.code.toByte(), '1'.code.toByte(), 'R'.code.toByte(), 'X'.code.toByte(),
-        0xB3.toByte(), 0x15
+        'F'.code.toByte(), 'L'.code.toByte(), 'R'.code.toByte(), 'X'.code.toByte(),
+        0xB3.toByte(), 0x15, 2
     )
+
+    @Test
+    fun oldV1BeaconIsNull() {
+        val old = byteArrayOf(0xFB.toByte(), -1, -1, -1, 'F'.code.toByte(), '1'.code.toByte(),
+            'R'.code.toByte(), 'X'.code.toByte(), 0xB3.toByte(), 0x15)
+        assertNull(decodeDiscovery(old, old.size))
+    }
+
+    @Test
+    fun wrongVersionIsNull() {
+        val v1 = beacon.copyOf().also { it[10] = 1 }
+        assertNull(decodeDiscovery(v1, v1.size))
+    }
 
     @Test
     fun decodesControlPort() {
@@ -28,7 +41,7 @@ class DiscoveryPacketTest {
 
     @Test
     fun shortPacketIsNull() {
-        assertNull(decodeDiscovery(beacon, 9))
+        assertNull(decodeDiscovery(beacon, 10))
     }
 
     @Test

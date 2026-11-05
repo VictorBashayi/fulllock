@@ -12,7 +12,7 @@ import kotlin.concurrent.thread
 /**
  * Finds the PC by listening for the receiver's discovery beacon, which it
  * broadcasts about once a second on [DISCOVERY_PORT]:
- *   [0xFB 0xFF 0xFF 0xFF]["F1RX"][controlPort:u16]
+ *   [0xFB 0xFF 0xFF 0xFF]["FLRX"][controlPort:u16][version:u8 = 2]
  * The PC's IP is wherever the beacon came from. [onFound] runs on the listener
  * thread for every beacon; [shouldSwitchServer] decides whether to act on it.
  */
@@ -70,15 +70,17 @@ class DiscoveryListener(private val onFound: (ip: String, port: Int) -> Unit) {
 }
 
 private const val DISCOVERY_MARKER = 0xFFFFFFFB.toInt()
-private val DISCOVERY_TAG = "F1RX".toByteArray(Charsets.US_ASCII)
+private const val DISCOVERY_VERSION: Byte = 2
+private val DISCOVERY_TAG = "FLRX".toByteArray(Charsets.US_ASCII)
 
 /** Returns the beacon's control port, or null if [bytes] isn't a discovery beacon. */
 fun decodeDiscovery(bytes: ByteArray, length: Int): Int? {
-    if (length < 10) return null
+    if (length < 11) return null
     val bb = ByteBuffer.wrap(bytes, 0, length).order(ByteOrder.LITTLE_ENDIAN)
     if (bb.int != DISCOVERY_MARKER) return null
     for (b in DISCOVERY_TAG) if (bb.get() != b) return null
-    return bb.short.toInt() and 0xFFFF
+    val port = bb.short.toInt() and 0xFFFF
+    return if (bb.get() == DISCOVERY_VERSION) port else null
 }
 
 /**
