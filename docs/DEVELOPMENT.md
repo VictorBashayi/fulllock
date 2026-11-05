@@ -86,6 +86,16 @@ Uses the XInput `XUSB_GAMEPAD.wButtons` layout directly, so neither side transla
 `[0xFFFFFFFF:u32][seq:u32][timestamp_us:u64]` — phone sends 10 Hz, receiver echoes it
 back unchanged; the phone computes RTT from the echoed timestamp.
 
+### Pairing and authentication (protocol v2)
+
+Every packet carries a trailer `ctr:u32 LE ‖ tag` (8-byte tag, truncated HMAC-SHA256 under the pairing key). Direction byte `0x01` = phone→PC, `0x02` = PC→phone; context = `pcSession ‖ phoneNonce` (empty for pings). Ping is 25 B and pong 24 B including the pairing fields. The discovery beacon is 11 B: `"FLRX"` + version 2 + port/session fields.
+
+- Key: PBKDF2-HMAC-SHA256, 200,000 iterations, salt `"FullLock-pair-v1"`, over the normalized pair code (I/L→1, O→0, dashes and case ignored).
+- PC stores the code DPAPI-protected in `%APPDATA%\FullLock\pairing.json`. The phone stores the derived key wrapped by an AndroidKeyStore AES-GCM key.
+- `FullLock.exe --new-code` rotates the code; it applies on the next start.
+- Test vectors both sides must match: [protocol/pairing-test-vectors.md](protocol/pairing-test-vectors.md).
+- Authenticated, not encrypted: telemetry and inputs are readable on the LAN.
+
 ## Phases
 
 ### Phase 0 — IMU Characterization (`phase0-imu-characterization/`)

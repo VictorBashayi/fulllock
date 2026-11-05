@@ -40,8 +40,9 @@ You can check the download against `SHA256SUMS.txt` on the release page. A porta
 
 1. On the PC, open **FullLock (Phone)** from the Start menu.
 2. Open the FullLock app on the phone and tap **Connect**. It finds the PC on your network automatically. You can also type the PC's IP under Settings.
-3. Hold the phone level like a wheel and tap **Set Center (Calibrate)**.
-4. Start the game and drive.
+3. First time only: pair the phone (see [Pairing](#pairing)).
+4. Hold the phone level like a wheel and tap **Set Center (Calibrate)**.
+5. Start the game and drive.
 
 ### DualShock 4
 
@@ -55,6 +56,20 @@ You can check the download against `SHA256SUMS.txt` on the release page. A porta
    | `[` `]` | steering lock: how far you bank for full lock |
    | `-` `=` | centre deadzone |
    | `,` `.` | response curve |
+
+## Pairing
+
+Pairing stops other people on your Wi-Fi from driving your virtual pad. You do it once per phone.
+
+1. On first run the PC window shows a QR code and `Pair code: XXXX-XXXX-XX`.
+2. On the phone, the pairing dialog opens by itself when the PC is found. Tap **Scan QR** (the camera permission is asked only then), or type the code. Case and dashes don't matter, and I, L and O are read as 1, 1 and 0.
+3. After pairing, the QR hides. Press **P** in the PC window to show the code again, for example to pair another phone. Any number of phones can know the code, but only one drives at a time.
+
+To get a new code, run `FullLock.exe --new-code`. It takes effect the next time FullLock starts (a running FullLock keeps the old code), so close and reopen FullLock. Every phone then shows "PC's pair code changed — re-pair".
+
+**Limitation:** traffic is authenticated (nobody else on the Wi-Fi can drive the pad or pretend to be your PC) but not encrypted, so someone on your Wi-Fi could read the telemetry and inputs.
+
+**Updating from the old "F1 Controller" app:** uninstall it first. FullLock has a different app id and won't replace it.
 
 ## Recommended in-game settings
 
@@ -71,6 +86,12 @@ The game is reading the real pad as well as FullLock's virtual one. Install HidH
 - Make sure both are on the same Wi-Fi network.
 - Set that network to **Private** in Windows (Settings → Network & internet → your network). Setup only allows FullLock through the firewall on Private networks, so it never listens on public Wi-Fi.
 - Some routers block devices from talking to each other ("AP isolation" or "guest network"). If yours does, use the main network.
+
+**"Code doesn't match this PC — check the code on the PC screen".**
+Check the code on the PC window. This message also appears when the PC didn't answer at all (PC off, wrong network, firewall), so make sure FullLock is running and both devices are on the same Wi-Fi. In the app, Settings → Pairing has **Forget PC** and **Re-pair**.
+
+**Using `--port` other than 5555.**
+Setup's firewall rule only allows UDP 5555 and 20777 from the local subnet. Add your own firewall rule for the custom port.
 
 **"ViGEmBus is not installed".**
 Run setup again, or install [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest), then restart the PC.
