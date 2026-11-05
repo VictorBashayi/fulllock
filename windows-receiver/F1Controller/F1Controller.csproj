@@ -15,6 +15,7 @@
     <PackageReference Include="HidSharp" Version="2.1.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     <PackageReference Include="Nefarius.ViGEm.Client" Version="1.21.256" />
+    <InternalsVisibleTo Include="F1Controller.Tests" />
   </ItemGroup>
 
 </Project>

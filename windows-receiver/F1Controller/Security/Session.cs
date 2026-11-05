@@ -25,7 +25,7 @@ public sealed class Session
     // control of a former phone can't re-enter at ctr 0. Grows by one per phone (re)connect only.
     readonly Dictionary<ulong, uint> _lastCtr = [];
     ulong? _active;
-    uint _sendCtr = 1;
+    ulong _sendCtr = 1; // ulong so exhaustion is detectable instead of wrapping to 0
     IPEndPoint? _activeEndPoint;
     bool _hasPaired;
     long _rejected;
@@ -45,6 +45,7 @@ public sealed class Session
     public bool HasPaired { get { lock (_lock) return _hasPaired; } }
     public long RejectedPackets { get { lock (_lock) return _rejected; } }
     public event Action? Paired;
+    internal ulong NextSendCtr { set { lock (_lock) _sendCtr = value; } } // test seam
 
     void Ctx(ulong nonce, Span<byte> ctx)
     {
@@ -77,6 +78,7 @@ public sealed class Session
             return AcceptResult.Rejected;
         }
         ulong nonce = BinaryPrimitives.ReadUInt64LittleEndian(d[PingNonceOffset..]);
+        if (nonce == _active) return AcceptResult.Ping; // keep pending for takeover candidates only
         _pending.Remove(nonce);
         _pending.Add(nonce);
         if (_pending.Count > MaxPending) _pending.RemoveAt(0);
@@ -110,14 +112,19 @@ public sealed class Session
 
     public byte[] BuildPong(ReadOnlySpan<byte> pingPayload)
     {
-        if (pingPayload.Length != PingPayloadSize) throw new ArgumentException("ping payload must be 25 bytes", nameof(pingPayload));
+        if (pingPayload.Length != PingPayloadSize || BinaryPrimitives.ReadUInt32LittleEndian(pingPayload) != ControlPacket.PingMarker)
+            throw new ArgumentException("not a 25-byte ping payload", nameof(pingPayload));
         Span<byte> pong = stackalloc byte[PongPayloadSize];
         pingPayload[..PingEchoSize].CopyTo(pong);
         _pcSession.CopyTo(pong[PingEchoSize..]);
         Span<byte> ctx = stackalloc byte[PacketAuth.ContextSize];
         Ctx(BinaryPrimitives.ReadUInt64LittleEndian(pingPayload[PingNonceOffset..]), ctx);
         var dest = new byte[PongPayloadSize + PacketAuth.TrailerSize];
-        lock (_lock) PacketAuth.Seal(_key, PacketAuth.DirPcToPhone, ctx, pong, _sendCtr++, dest);
+        lock (_lock)
+        {
+            if (_sendCtr > uint.MaxValue) throw new InvalidOperationException("PC send counter exhausted");
+            PacketAuth.Seal(_key, PacketAuth.DirPcToPhone, ctx, pong, (uint)_sendCtr++, dest);
+        }
         return dest;
     }
 
@@ -127,9 +134,10 @@ public sealed class Session
         var dest = new byte[payload.Length + PacketAuth.TrailerSize];
         lock (_lock)
         {
-            if (_active is not { } nonce) return null;
+            // Stop sealing rather than wrap: a reused ctr would be dropped by the phone anyway.
+            if (_active is not { } nonce || _sendCtr > uint.MaxValue) return null;
             Ctx(nonce, ctx);
-            PacketAuth.Seal(_key, PacketAuth.DirPcToPhone, ctx, payload, _sendCtr++, dest);
+            PacketAuth.Seal(_key, PacketAuth.DirPcToPhone, ctx, payload, (uint)_sendCtr++, dest);
         }
         return dest;
     }

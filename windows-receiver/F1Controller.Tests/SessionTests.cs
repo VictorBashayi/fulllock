@@ -248,6 +248,92 @@ public class SessionTests
     }
 
     [Fact]
+    public void ActivePhonePingDoesNotEnterPending()
+    {
+        var s = NewSession();
+        var a = new Phone(0x11);
+        Pair(s, a, EpA);
+        Assert.Equal(AcceptResult.Ping, Accept(s, a.Ping(), EpA));
+        Pair(s, new Phone(0x21), EpB);
+        Assert.Equal(AcceptResult.Rejected, Accept(s, a.Control(), EpA));
+        Assert.Equal(AcceptResult.Ping, Accept(s, a.Ping(), EpA));
+        Assert.Equal(AcceptResult.ControlNewPhone, Accept(s, a.Control(), EpA));
+    }
+
+    [Fact]
+    public void RePingMovesToMostRecentWithoutDuplicating()
+    {
+        var s = NewSession();
+        var p = Enumerable.Range(0, 5).Select(i => new Phone((byte)(0x10 * (i + 1)))).ToArray();
+        // move: P0..P3, re-ping P0, then P4 evicts P1 (not P0)
+        foreach (var i in new[] { 0, 1, 2, 3, 0, 4 }) Accept(s, p[i].Ping(), EpA);
+        Assert.Equal(AcceptResult.Rejected, Accept(s, p[1].Control(), EpA));
+        Assert.Equal(AcceptResult.ControlNewPhone, Accept(s, p[0].Control(), EpA));
+
+        // no duplicates: P0, P1, P0, P0, P2, P3 keeps P1 (duplicates would have evicted it)
+        s = NewSession();
+        p = Enumerable.Range(0, 4).Select(i => new Phone((byte)(0x50 + 0x10 * i))).ToArray();
+        foreach (var i in new[] { 0, 1, 0, 0, 2, 3 }) Accept(s, p[i].Ping(), EpA);
+        Assert.Equal(AcceptResult.ControlNewPhone, Accept(s, p[1].Control(), EpA));
+    }
+
+    [Fact]
+    public void PromotionRemovesNonceFromPending()
+    {
+        var s = NewSession();
+        var p = Enumerable.Range(0, 5).Select(i => new Phone((byte)(0x10 * (i + 1)))).ToArray();
+        foreach (var i in new[] { 0, 1, 2, 3 }) Accept(s, p[i].Ping(), EpA);
+        Assert.Equal(AcceptResult.ControlNewPhone, Accept(s, p[3].Control(), EpA));
+        Accept(s, p[4].Ping(), EpA); // P3 left pending, so P4 fits without evicting P0
+        Assert.Equal(AcceptResult.ControlNewPhone, Accept(s, p[0].Control(), EpA));
+    }
+
+    [Fact]
+    public void SealedPingWithWrongLengthIsRejected()
+    {
+        var s = NewSession();
+        var p = new byte[Session.PingPayloadSize + 1];
+        BinaryPrimitives.WriteUInt32LittleEndian(p, ControlPacket.PingMarker);
+        var d = new byte[p.Length + PacketAuth.TrailerSize];
+        PacketAuth.Seal(Key, PacketAuth.DirPhoneToPc, [], p, 1, d);
+        Assert.Equal(AcceptResult.Rejected, Accept(s, d, EpA));
+        Assert.Equal(1, s.RejectedPackets);
+    }
+
+    [Fact]
+    public void PcDirectionPacketIsRejected()
+    {
+        var s = NewSession();
+        var phone = new Phone(0x11);
+        Pair(s, phone, EpA);
+        var d = new byte[ControlPacket.Size + PacketAuth.TrailerSize];
+        PacketAuth.Seal(Key, PacketAuth.DirPcToPhone, phone.Ctx(PcSession), new byte[ControlPacket.Size], 100, d);
+        Assert.Equal(AcceptResult.Rejected, Accept(s, d, EpEvil));
+        Assert.Equal(EpA, s.ActiveEndPoint);
+    }
+
+    [Fact]
+    public void BuildPongRequiresPingMarker()
+    {
+        var p = new byte[Session.PingPayloadSize];
+        Assert.Throws<ArgumentException>(() => NewSession().BuildPong(p));
+    }
+
+    [Fact]
+    public void SendCounterStopsAtMaxInsteadOfWrapping()
+    {
+        var s = NewSession();
+        var phone = new Phone(0x11);
+        var ping = phone.Ping();
+        Accept(s, ping, EpA);
+        Accept(s, phone.Control(), EpA);
+        s.NextSendCtr = uint.MaxValue;
+        Assert.Equal(uint.MaxValue, phone.Open(s.SealForActive(new byte[4])!).ctr);
+        Assert.Null(s.SealForActive(new byte[4]));
+        Assert.Throws<InvalidOperationException>(() => s.BuildPong(ping.AsSpan(0, Session.PingPayloadSize)));
+    }
+
+    [Fact]
     public void SealForActiveNullBeforePairing()
     {
         var s = NewSession();
