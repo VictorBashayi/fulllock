@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Process
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -19,8 +20,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.lifecycle.lifecycleScope
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -38,7 +45,10 @@ import com.f1controller.engineer.EngineerSettings
 import com.f1controller.input.SteeringProcessor
 import com.f1controller.network.DiscoveryListener
 import com.f1controller.network.PacketAuth
+import com.f1controller.network.PairingCode
+import com.f1controller.network.PairingStatus
 import com.f1controller.network.PairingStore
+import com.f1controller.network.pairingStatus
 import com.f1controller.network.UdpTransport
 import com.f1controller.network.shouldSwitchServer
 import com.f1controller.sensor.SensorLogger
@@ -67,6 +77,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private lateinit var sensorLogger: SensorLogger
     private lateinit var pairingStore: PairingStore
     private val transport = UdpTransport()
+    private val pairingUi = PairingUiState()
     private val steeringProcessor = SteeringProcessor()
     private val pedalSettings = PedalSettings()
     private val engineerSettings = EngineerSettings()
@@ -91,6 +102,12 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     @Volatile private var latestGyroTs = 0L
     @Volatile private var hasAccel = false
     @Volatile private var sensorListenerActive = false
+
+    // Pairing status inputs
+    @Volatile private var lastBeaconNs = 0L
+    private var attemptUntilMs = 0L          // pairingAttempt stays true until this (3 s after a failed pair)
+    private var everConnected = false        // a valid pong while paired, this app run
+    private var sheetAutoOpened = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -137,6 +154,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     engineerSettings = engineerSettings,
                     engineerRadio = engineerRadio,
                     discovery = discovery,
+                    pairingUi = pairingUi,
+                    computePairingStatus = ::computePairingStatus,
+                    onPairSubmit = ::submitPairing,
+                    onForgetPc = ::forgetPc,
                 )
             }
         }
@@ -177,6 +198,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     /** Called on the discovery thread for every beacon heard. */
     private fun onReceiverFound(ip: String, port: Int) {
+        lastBeaconNs = System.nanoTime()
         val connected = transport.state.value.isConnected
         if (!shouldSwitchServer(connected, transport.serverIp, transport.serverPort, ip, port)) return
         transport.serverIp = ip
@@ -186,6 +208,64 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             transport.disconnect()
             transport.connect()
         }
+    }
+
+    // ---- Pairing ----
+
+    private fun ageMs(ns: Long): Long? = if (ns == 0L) null else (System.nanoTime() - ns) / 1_000_000
+
+    /** Called from the UI ticker (~250 ms): ages change without any state emission. */
+    private fun computePairingStatus(): PairingStatus {
+        val attempt = pairingUi.busy || System.currentTimeMillis() < attemptUntilMs
+        // During/after a failed attempt there is no stored key, but the mismatch rule needs one
+        val s = pairingStatus(transport.auth != null || attempt, attempt, ageMs(lastBeaconNs), ageMs(transport.lastValidPongNs), everConnected)
+        if (s == PairingStatus.PAIRED) everConnected = true
+        if (s == PairingStatus.NEEDS_PAIRING && !sheetAutoOpened) { sheetAutoOpened = true; pairingUi.sheetOpen = true }
+        return s
+    }
+
+    private fun submitPairing(code: String) {
+        pairingUi.busy = true
+        pairingUi.error = null
+        lifecycleScope.launch {
+            val ok = try { tryPair(code) } finally { pairingUi.busy = false }
+            if (ok) { pairingUi.sheetOpen = false; everConnected = true }
+            else { attemptUntilMs = System.currentTimeMillis() + 3000; pairingUi.error = ERR_CODE_MISMATCH }
+        }
+    }
+
+    private fun forgetPc() {
+        pairingStore.forget()
+        transport.auth = null
+        transport.disconnect()
+        everConnected = false
+    }
+
+    /** Derives the key, tries it against the PC for up to 2 s, stores it only if a valid pong came back. */
+    suspend fun tryPair(normalizedCode: String): Boolean {
+        val raw = withContext(Dispatchers.Default) { PacketAuth.deriveKey(normalizedCode) }
+        val previous = transport.auth
+        transport.auth = PacketAuth(PacketAuth.keyFromRaw(raw))
+        transport.disconnect()
+        transport.connect()
+        var waited = 0
+        while (transport.lastValidPongNs == 0L && waited < 2000) { delay(50); waited += 50 }
+        if (transport.lastValidPongNs != 0L) {
+            try {
+                pairingStore.save(raw.copyOf())
+                transport.auth = pairingStore.key()?.let(::PacketAuth) ?: transport.auth
+            } catch (e: Exception) {
+                // keep the in-memory key for this run
+                Toast.makeText(this, ERR_SAVE_FAILED, Toast.LENGTH_LONG).show()
+            }
+            raw.fill(0)
+            return true
+        }
+        raw.fill(0)
+        transport.auth = previous
+        transport.disconnect()
+        if (previous != null) transport.connect()
+        return false
     }
 
     // ---- Settings persistence ----
@@ -324,7 +404,33 @@ fun F1ControllerApp(
     engineerSettings: EngineerSettings,
     engineerRadio: EngineerRadio,
     discovery: DiscoveryListener,
+    pairingUi: PairingUiState,
+    computePairingStatus: () -> PairingStatus,
+    onPairSubmit: (String) -> Unit,
+    onForgetPc: () -> Unit,
 ) {
+    LaunchedEffect(Unit) {
+        while (true) { pairingUi.status = computePairingStatus(); delay(250) }
+    }
+    val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val text = result.contents ?: return@rememberLauncherForActivityResult // cancelled / permission denied
+        val code = PairingCode.fromQrText(text)
+        if (code == null) pairingUi.error = ERR_BAD_QR else onPairSubmit(code)
+    }
+    if (pairingUi.sheetOpen) PairingSheet(
+        status = pairingUi.status,
+        onSubmit = onPairSubmit,
+        onScan = {
+            scanner.launch(
+                ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE).setBeepEnabled(false)
+                    .setPrompt("Scan the code on the FullLock PC window").setOrientationLocked(false)
+            )
+        },
+        busy = pairingUi.busy,
+        error = pairingUi.error,
+        onDismiss = { pairingUi.sheetOpen = false },
+    )
+    val openSheet = { pairingUi.error = null; pairingUi.sheetOpen = true }
     val navController = rememberNavController()
     val radioCall by engineerRadio.current.collectAsState()
     val currentBackStack by navController.currentBackStackEntryAsState()
@@ -371,6 +477,8 @@ fun F1ControllerApp(
                     pedalSettings = pedalSettings,
                     radioCall = radioCall,
                     onOpenSettings = { navigateTo(NavTab.SETTINGS.route) },
+                    pairingStatus = pairingUi.status,
+                    onRepair = openSheet,
                 )
             }
             composable(NavTab.LOGGER.route) {
@@ -384,6 +492,9 @@ fun F1ControllerApp(
                     engineerSettings = engineerSettings,
                     engineerRadio = engineerRadio,
                     discovery = discovery,
+                    pairingStatus = pairingUi.status,
+                    onRepair = openSheet,
+                    onForget = onForgetPc,
                 )
             }
         }

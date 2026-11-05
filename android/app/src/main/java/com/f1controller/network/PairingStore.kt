@@ -2,11 +2,14 @@ package com.f1controller.network
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import com.f1controller.MainActivity
 import java.security.Key
 import java.security.KeyStore
+import java.security.UnrecoverableKeyException
 import java.util.Base64
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -23,14 +26,17 @@ class PairingStore(context: Context) {
 
     val isPaired: Boolean get() = prefs.contains(PREF_KEY)
 
-    /** Null when unpaired, or when the stored key can't be decrypted (keystore reset, tampering): that pref is then cleared. */
+    /** Null when unpaired or the key can't be read; cleared too if it is permanently undecryptable (keystore reset, tampering). */
     fun key(): Key? {
         val packed = prefs.getString(PREF_KEY, null) ?: return null
         return try {
             val raw = openPairKey(wrapKey(), packed)
             try { SecretKeySpec(raw, "HmacSHA256") } finally { raw.fill(0) } // SecretKeySpec keeps its own copy
         } catch (e: Exception) {
-            prefs.edit().remove(PREF_KEY).apply()
+            // Only a permanently unusable key unpairs; a transient keystore error just returns null for this run
+            if (e is AEADBadTagException || e is IllegalArgumentException || e is UnrecoverableKeyException ||
+                e is KeyPermanentlyInvalidatedException
+            ) prefs.edit().remove(PREF_KEY).apply()
             null
         }
     }

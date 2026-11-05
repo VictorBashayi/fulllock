@@ -25,6 +25,14 @@ object PairingCode {
         listOf(0..4, 4..8, 8..10).map { normalized.substring(minOf(it.first, normalized.length), minOf(it.last, normalized.length)) }
             .filter { it.isNotEmpty() }.joinToString("-")
 
+    /** As-you-type: keeps valid chars (case/lookalikes mapped like [normalize]), drops the rest, caps at [LENGTH]. */
+    fun clean(input: String): String = buildString {
+        for (raw in input) {
+            val c = raw.uppercaseChar().let { when (it) { 'I', 'L' -> '1'; 'O' -> '0'; else -> it } }
+            if (c in ALPHABET && length < LENGTH) append(c)
+        }
+    }
+
     /** Code from "fulllock://pair?code=…" (scheme/host case-insensitive), else null. */
     fun fromQrText(text: String): String? {
         val prefix = "fulllock://pair?"

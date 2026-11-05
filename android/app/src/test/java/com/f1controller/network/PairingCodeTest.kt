@@ -34,6 +34,12 @@ class PairingCodeTest {
         assertEquals("K7QD-9MXP", PairingCode.format("K7QD9MXP"))
     }
 
+    @Test fun cleanTypedInput() {
+        assertEquals("K7QD9", PairingCode.clean("k7-qd 9!"))
+        assertEquals("K7QD910", PairingCode.clean("K7QD9IO"))
+        assertEquals("K7QD9MXP2A", PairingCode.clean("K7QD9MXP2AZZ"))
+    }
+
     @Test fun fromQrTextAcceptsOnlyFulllockUri() {
         assertEquals("K7QD9MXP2A", PairingCode.fromQrText("fulllock://pair?code=k7qd-9mxp-2a"))
         assertEquals("K7QD9MXP2A", PairingCode.fromQrText("FullLock://PAIR?code=K7QD9MXP2A"))

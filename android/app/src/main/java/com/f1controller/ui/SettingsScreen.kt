@@ -19,6 +19,7 @@ import com.f1controller.engineer.EngineerRadio
 import com.f1controller.engineer.EngineerSettings
 import com.f1controller.input.SteeringProcessor
 import com.f1controller.network.DiscoveryListener
+import com.f1controller.network.PairingStatus
 import com.f1controller.network.RadioCall
 import com.f1controller.network.UdpTransport
 
@@ -34,6 +35,9 @@ fun SettingsScreen(
     engineerSettings: EngineerSettings,
     engineerRadio: EngineerRadio,
     discovery: DiscoveryListener,
+    pairingStatus: PairingStatus,
+    onRepair: () -> Unit,
+    onForget: () -> Unit,
 ) {
     var serverIp by remember { mutableStateOf(transport.serverIp) }
     val found by discovery.found.collectAsState()
@@ -61,6 +65,16 @@ fun SettingsScreen(
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold
         )
+
+        // ---- Pairing ----
+        SectionCard("Pairing") {
+            Text(pairingStatusText(pairingStatus), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onRepair, shape = RoundedCornerShape(8.dp)) { Text("Re-pair") }
+                OutlinedButton(onClick = onForget, shape = RoundedCornerShape(8.dp)) { Text("Forget PC") }
+            }
+        }
 
         // ---- Connection Settings ----
         SectionCard("Connection") {

@@ -90,4 +90,4 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## License
 
-[MIT](LICENSE). Third-party components are listed in [installer/THIRD-PARTY-NOTICES.txt](installer/THIRD-PARTY-NOTICES.txt).
+[MIT](LICENSE). Third-party components are listed in [installer/THIRD-PARTY-NOTICES.txt](installer/THIRD-PARTY-NOTICES.txt). The Android app also bundles ZXing (Apache-2.0); see `android/app/src/main/assets/THIRD-PARTY-NOTICES.txt`.

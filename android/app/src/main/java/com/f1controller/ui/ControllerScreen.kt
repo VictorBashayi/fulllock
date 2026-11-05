@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.f1controller.network.PairingStatus
 import com.f1controller.network.RadioCall
 import com.f1controller.network.UdpTransport
 import kotlinx.coroutines.delay
@@ -111,6 +112,8 @@ fun ControllerScreen(
     pedalSettings: PedalSettings,
     radioCall: RadioCall?,
     onOpenSettings: () -> Unit,
+    pairingStatus: PairingStatus,
+    onRepair: () -> Unit,
 ) {
     val tState by transport.state.collectAsState()
     // Null until the receiver forwards game telemetry (game running with UDP telemetry on)
@@ -253,6 +256,11 @@ fun ControllerScreen(
                     color = Palette.TextDim
                 )
                 PageDots(centerPage, count = 3)
+                if (pairingStatus != PairingStatus.PAIRED) {
+                    Text(pairingStatusText(pairingStatus), fontSize = 11.sp, color = Palette.Yellow)
+                    if (pairingStatus == PairingStatus.CODE_CHANGED)
+                        TextButton(onClick = onRepair, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) { Text("Re-pair", fontSize = 12.sp) }
+                }
                 StatusPills(tState, lockAngleDeg(), onOpenSettings)
             }
             Box(Modifier.weight(0.23f).fillMaxHeight(), contentAlignment = Alignment.Center) {
