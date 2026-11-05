@@ -257,7 +257,9 @@ class Program
                 catch (OperationCanceledException) { break; }
                 catch
                 {
-                    // Swallow rendering errors (console resize, etc.)
+                    // Swallow rendering errors (console resize, etc.); still wait so a persistent error can't busy-spin
+                    try { await Task.Delay(67, cts.Token); }
+                    catch (OperationCanceledException) { break; }
                 }
             }
         }, cts.Token));

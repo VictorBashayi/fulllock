@@ -131,7 +131,8 @@ public sealed class UdpReceiver : IDisposable
                 // Ping/pong: sealed pong back for RTT measurement
                 if (accepted == AcceptResult.Ping)
                 {
-                    EngineerLevel = ControlPacket.ReadPingLevel(payload);
+                    if (_session.IsActivePing(payload))
+                        EngineerLevel = ControlPacket.ReadPingLevel(payload);
                     try
                     {
                         var pong = _session.BuildPong(payload);

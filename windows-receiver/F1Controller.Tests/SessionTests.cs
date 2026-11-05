@@ -77,6 +77,24 @@ public class SessionTests
     }
 
     [Fact]
+    public void OnlyActivePhonesPingIsActive()
+    {
+        var s = NewSession();
+        var a = new Phone(0x11);
+        var stranger = new Phone(0x51); // e.g. pings replayed from a previous PC run: valid tag, never active
+        var ping = a.Ping();
+        Assert.Equal(AcceptResult.Ping, s.Accept(ping, EpA, out int n));
+        Assert.False(s.IsActivePing(ping.AsSpan(0, n))); // not active until its first control
+        Assert.Equal(AcceptResult.ControlNewPhone, Accept(s, a.Control(), EpA));
+        ping = a.Ping();
+        Assert.Equal(AcceptResult.Ping, s.Accept(ping, EpA, out n));
+        Assert.True(s.IsActivePing(ping.AsSpan(0, n)));
+        var other = stranger.Ping();
+        Assert.Equal(AcceptResult.Ping, s.Accept(other, EpEvil, out n));
+        Assert.False(s.IsActivePing(other.AsSpan(0, n)));
+    }
+
+    [Fact]
     public void PingAfterNewerControlWithOlderCtrIsRejected()
     {
         var s = NewSession();

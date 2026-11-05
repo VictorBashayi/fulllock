@@ -113,6 +113,15 @@ public sealed class Session
         return AcceptResult.Rejected;
     }
 
+    /// <summary>True if this accepted ping payload comes from the active phone's nonce (pings replayed
+    /// from an earlier PC run authenticate too, but their nonce never becomes active here).</summary>
+    public bool IsActivePing(ReadOnlySpan<byte> pingPayload)
+    {
+        if (pingPayload.Length != PingPayloadSize) return false;
+        ulong nonce = BinaryPrimitives.ReadUInt64LittleEndian(pingPayload[PingNonceOffset..]);
+        lock (_lock) return nonce == _active;
+    }
+
     public byte[] BuildPong(ReadOnlySpan<byte> pingPayload)
     {
         if (pingPayload.Length != PingPayloadSize || BinaryPrimitives.ReadUInt32LittleEndian(pingPayload) != ControlPacket.PingMarker)

@@ -63,6 +63,36 @@ public class ConsoleDashboardTests
         Assert.False(d.ShowPairing);
     }
 
+    static string[] Lines(string panel) => panel.TrimEnd('\r', '\n').Split(Environment.NewLine);
+
+    [Fact]
+    public void PairingPanelWithQrFitsDefaultConsole()
+    {
+        var (d, s) = Make();
+        // worst case for the notes: paired (P toggled back on) + rejected packets
+        Pair(s);
+        s.Accept(new byte[37], new IPEndPoint(IPAddress.Loopback, 1), out _);
+        d.HandleKey('p');
+        var lines = Lines(d.BuildPairingPanel(119, 30, "Signal lost — inputs released"));
+        Assert.True(lines.Length < 30, $"{lines.Length} rows");
+        Assert.All(lines, l => Assert.True(l.Length <= 119));
+        Assert.Contains(lines, l => l.Contains("████████"));
+        Assert.Contains(lines, l => l.StartsWith("  Pair code: "));
+        Assert.Contains(lines, l => l.Contains("Scan or type this in the FullLock app"));
+    }
+
+    [Fact]
+    public void PairingPanelTooSmallFallsBackToText()
+    {
+        var (d, _) = Make();
+        var lines = Lines(d.BuildPairingPanel(119, 20, "Waiting for phone..."));
+        Assert.DoesNotContain(lines, l => l.Contains('█'));
+        Assert.Contains(lines, l => l.StartsWith("  Pair code: "));
+        Assert.Contains(lines, l => l.Contains("Enlarge this window to show the QR code"));
+        // no console (0x0) gives the same text-only panel
+        Assert.Contains(Lines(d.BuildPairingPanel(0, 0, "x")), l => l.Contains("Enlarge this window"));
+    }
+
     [Fact]
     public void OtherKeysIgnored()
     {
