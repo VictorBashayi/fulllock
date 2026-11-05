@@ -149,6 +149,8 @@ class UdpTransport {
         val pingSeq = AtomicInteger(0)
         // Per session so a late pong of an old session can't mark a new candidate address connected
         @Volatile var lastPongNs = 0L
+        /** The ip/port this session's socket is connected to; set once after resolve. */
+        @Volatile var server: Pair<String, Int>? = null
         // Seqs of the last 16 pings; seqs are consecutive so slot = seq and 15
         private val outstanding = IntArray(16)
 
@@ -164,6 +166,15 @@ class UdpTransport {
 
     private val session = AtomicReference<Session?>(null)
     private val seq = AtomicInteger(0)
+    // Session swaps and every public-state write take this lock, so a thread of an old
+    // session can't write after connect()/disconnect() reset the state.
+    private val stateLock = Any()
+
+    private val _connectedServer = MutableStateFlow<Pair<String, Int>?>(null)
+    /** ip/port of the current session once it got a valid pong (the only server worth persisting). */
+    val connectedServer: StateFlow<Pair<String, Int>?> = _connectedServer
+
+    private inline fun ifCurrent(s: Session, block: () -> Unit) = synchronized(stateLock) { if (isCurrent(s)) block() }
 
     // Shared control data — written by sensor/UI threads, read by send thread
     @Volatile var steer: Short = 0
@@ -190,22 +201,26 @@ class UdpTransport {
 
         val socket = DatagramSocket().apply { soTimeout = 50 } // ms — receive polling
         val s = Session(socket, a)
-        if (!session.compareAndSet(null, s)) {
-            socket.close()
-            return
+        synchronized(stateLock) {
+            if (!session.compareAndSet(null, s)) {
+                socket.close()
+                return
+            }
+            resetStats()
+            _state.value = TransportState(isActive = true)
+            _connectedServer.value = null
         }
-
-        resetStats()
-        _state.value = TransportState(isActive = true)
 
         // Resolve on a worker thread (getByName may hit DNS) and fail softly.
         thread(name = "udp-sender", isDaemon = true) {
+            val ip = serverIp.trim()
             val port = serverPort
             try {
                 // connect() also makes the OS drop datagrams from any other source
-                socket.connect(InetAddress.getByName(serverIp.trim()), port)
+                socket.connect(InetAddress.getByName(ip), port)
+                s.server = ip to port
             } catch (e: Exception) {
-                fail(s, "Invalid server address: ${serverIp.trim()}")
+                fail(s, "Invalid server address: $ip")
                 return@thread
             }
 
@@ -216,11 +231,14 @@ class UdpTransport {
     }
 
     fun disconnect() {
-        val s = session.getAndSet(null) ?: return
-        s.socket.close()
-        _state.value = TransportState()
-        _telemetry.value = null
-        _race.value = null
+        synchronized(stateLock) {
+            val s = session.getAndSet(null) ?: return
+            s.socket.close()
+            _state.value = TransportState()
+            _telemetry.value = null
+            _race.value = null
+            _connectedServer.value = null
+        }
     }
 
     fun isRunning(): Boolean = session.get() != null
@@ -228,9 +246,12 @@ class UdpTransport {
     private fun isCurrent(s: Session) = session.get() === s
 
     private fun fail(s: Session, message: String) {
-        if (session.compareAndSet(s, null)) {
-            s.socket.close()
-            _state.value = TransportState(error = message)
+        synchronized(stateLock) {
+            if (session.compareAndSet(s, null)) {
+                s.socket.close()
+                _state.value = TransportState(error = message)
+                _connectedServer.value = null
+            }
         }
     }
 
@@ -273,7 +294,7 @@ class UdpTransport {
             }
 
             // Update UI state every 50 ticks (~200ms)
-            if (++tick % 50 == 0 && isCurrent(s)) {
+            if (++tick % 50 == 0) ifCurrent(s) {
                 val pongNs = s.lastPongNs
                 _state.value = _state.value.copy(
                     isConnected = pongNs != 0L && System.nanoTime() - pongNs < LINK_TIMEOUT_NS,
@@ -345,12 +366,14 @@ class UdpTransport {
 
                 val bb = ByteBuffer.wrap(recvBuf, 0, n).order(ByteOrder.LITTLE_ENDIAN)
                 bb.int // marker
-                when (marker) {
-                    PING_MARKER -> onPong(s, bb)
-                    // Radio packets can be shorter than the 16-byte minimum of the others
-                    RADIO_MARKER -> decodeRadioCall(bb)?.let(::onRadioCall)
-                    GAME_STATE_MARKER -> if (n >= 16) onGameState(bb)
-                    RACE_STATE_MARKER -> if (n >= RACE_STATE_SIZE) onRaceState(bb)
+                ifCurrent(s) {
+                    when (marker) {
+                        PING_MARKER -> onPong(s, bb)
+                        // Radio packets can be shorter than the 16-byte minimum of the others
+                        RADIO_MARKER -> decodeRadioCall(bb)?.let(::onRadioCall)
+                        GAME_STATE_MARKER -> if (n >= 16) onGameState(bb)
+                        RACE_STATE_MARKER -> if (n >= RACE_STATE_SIZE) onRaceState(bb)
+                    }
                 }
             } catch (_: java.net.SocketTimeoutException) {
                 // Expected — soTimeout lets us notice disconnect
@@ -360,6 +383,7 @@ class UdpTransport {
         }
     }
 
+    /** Caller holds stateLock with [s] current. */
     private fun onPong(s: Session, bb: ByteBuffer) {
         bb.int // skip seq
         val sentUs = bb.long
@@ -373,6 +397,7 @@ class UdpTransport {
             pongCount++
         }
         s.lastPongNs = nowNs
+        _connectedServer.value = s.server
     }
 
     private fun onRadioCall(call: RadioCall) {

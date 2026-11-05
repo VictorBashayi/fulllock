@@ -20,8 +20,6 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -114,11 +112,9 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         sensorLogger = SensorLogger(sensorManager, sensorHandler)
         loadSettings()
         pairingStore = PairingStore(this)
-        transport.auth = pairingStore.key()?.let(::PacketAuth)
-        // Persist the server only once it has proven itself with a valid pong
-        lifecycleScope.launch {
-            transport.state.map { it.isConnected }.distinctUntilChanged().collect { if (it) saveServer() }
-        }
+        transport.auth = pairingStore.key()?.let(::PacketAuth) // null on any keystore trouble = unpaired
+        // Persist only the address a session actually got a valid pong from
+        lifecycleScope.launch { transport.connectedServer.collect { it?.let(::saveServer) } }
         transport.engineerLevel = { engineerSettings.level }
         engineerRadio = EngineerRadio(this, engineerSettings, lifecycleScope)
         lifecycleScope.launch { transport.radio.collect { engineerRadio.play(it) } }
@@ -222,17 +218,16 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         }
     }
 
-    /** Only an authenticated server is stored; an unverified candidate never overwrites it. */
-    private fun saveServer() {
-        if (!transport.state.value.isConnected) return
+    /** Only an authenticated server is stored; an unverified candidate or typed IP never overwrites it. */
+    private fun saveServer(server: Pair<String, Int>) {
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putString("server_ip", transport.serverIp)
-            .putInt("server_port", transport.serverPort)
+            .putString("server_ip", server.first)
+            .putInt("server_port", server.second)
             .apply()
     }
 
     private fun saveSettings() {
-        saveServer()
+        transport.connectedServer.value?.let(::saveServer)
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putBoolean("auto_connect", transport.autoConnect)
             .putFloat("curve", steeringProcessor.curve)
