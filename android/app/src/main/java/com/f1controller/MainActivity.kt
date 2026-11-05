@@ -22,6 +22,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.lifecycle.lifecycleScope
+import com.google.zxing.client.android.Intents
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.Dispatchers
@@ -106,7 +107,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     // Pairing status inputs
     @Volatile private var lastBeaconNs = 0L
     private var attemptUntilMs = 0L          // pairingAttempt stays true until this (3 s after a failed pair)
-    private var everConnected = false        // a valid pong while paired, this app run
     private var sheetAutoOpened = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -218,8 +218,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private fun computePairingStatus(): PairingStatus {
         val attempt = pairingUi.busy || System.currentTimeMillis() < attemptUntilMs
         // During/after a failed attempt there is no stored key, but the mismatch rule needs one
-        val s = pairingStatus(transport.auth != null || attempt, attempt, ageMs(lastBeaconNs), ageMs(transport.lastValidPongNs), everConnected)
-        if (s == PairingStatus.PAIRED) everConnected = true
+        val s = pairingStatus(transport.auth != null || attempt, attempt, ageMs(lastBeaconNs), ageMs(transport.lastValidPongNs), ageMs(transport.connectStartNs))
         if (s == PairingStatus.NEEDS_PAIRING && !sheetAutoOpened) { sheetAutoOpened = true; pairingUi.sheetOpen = true }
         return s
     }
@@ -229,7 +228,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         pairingUi.error = null
         lifecycleScope.launch {
             val ok = try { tryPair(code) } finally { pairingUi.busy = false }
-            if (ok) { pairingUi.sheetOpen = false; everConnected = true }
+            if (ok) pairingUi.sheetOpen = false
             else { attemptUntilMs = System.currentTimeMillis() + 3000; pairingUi.error = ERR_CODE_MISMATCH }
         }
     }
@@ -238,7 +237,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         pairingStore.forget()
         transport.auth = null
         transport.disconnect()
-        everConnected = false
     }
 
     /** Derives the key, tries it against the PC for up to 2 s, stores it only if a valid pong came back. */
@@ -423,6 +421,7 @@ fun F1ControllerApp(
         onScan = {
             scanner.launch(
                 ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE).setBeepEnabled(false)
+                    .addExtra(Intents.Scan.SCAN_TYPE, Intents.Scan.MIXED_SCAN) // PC QR is light-on-dark
                     .setPrompt("Scan the code on the FullLock PC window").setOrientationLocked(false)
             )
         },

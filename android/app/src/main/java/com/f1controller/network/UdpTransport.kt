@@ -149,6 +149,7 @@ class UdpTransport {
         val pingSeq = AtomicInteger(0)
         // Per session so a late pong of an old session can't mark a new candidate address connected
         @Volatile var lastPongNs = 0L
+        val startNs = System.nanoTime()
         /** The ip/port this session's socket is connected to; set once after resolve. */
         @Volatile var server: Pair<String, Int>? = null
         // Seqs of the last 16 pings; seqs are consecutive so slot = seq and 15
@@ -189,6 +190,8 @@ class UdpTransport {
     @Volatile private var pongCount = 0L
     /** System.nanoTime() of the last accepted pong of the current connect() (0 = never). */
     val lastValidPongNs: Long get() = session.get()?.lastPongNs ?: 0L
+    /** System.nanoTime() when the current connect() started (0 = not running). */
+    val connectStartNs: Long get() = session.get()?.startNs ?: 0L
 
     // Send rate tracking
     private val sendTimestamps = LongArray(64)

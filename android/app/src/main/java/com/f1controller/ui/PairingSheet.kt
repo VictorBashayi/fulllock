@@ -49,9 +49,12 @@ fun PairingSheet(
     var typed by remember { mutableStateOf("") } // always cleaned (normalized-so-far), shown formatted
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(pairingStatusText(status).let { if (status == PairingStatus.CODE_MISMATCH) "Pair with PC" else it }) },
+        title = { Text("Pair with PC") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // The error line below already says it for a mismatch
+                if (status != PairingStatus.CODE_MISMATCH || error == null)
+                    Text(pairingStatusText(status), fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                 Text("Scan the code on the FullLock PC window, or type it.", fontSize = 13.sp)
                 OutlinedButton(onClick = onScan, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Scan QR") }
                 OutlinedTextField(

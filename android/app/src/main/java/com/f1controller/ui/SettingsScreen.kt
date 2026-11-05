@@ -118,10 +118,10 @@ fun SettingsScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
-                        if (transport.isRunning()) {
-                            transport.disconnect()
-                        } else {
-                            transport.connect()
+                        when {
+                            transport.isRunning() -> transport.disconnect()
+                            transport.auth == null -> onRepair() // unpaired: connect() would do nothing
+                            else -> transport.connect()
                         }
                     },
                     colors = ButtonDefaults.buttonColors(

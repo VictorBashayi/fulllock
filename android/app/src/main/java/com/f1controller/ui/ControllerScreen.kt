@@ -258,8 +258,10 @@ fun ControllerScreen(
                 PageDots(centerPage, count = 3)
                 if (pairingStatus != PairingStatus.PAIRED) {
                     Text(pairingStatusText(pairingStatus), fontSize = 11.sp, color = Palette.Yellow)
-                    if (pairingStatus == PairingStatus.CODE_CHANGED)
-                        TextButton(onClick = onRepair, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) { Text("Re-pair", fontSize = 12.sp) }
+                    if (pairingStatus == PairingStatus.CODE_CHANGED || pairingStatus == PairingStatus.NEEDS_PAIRING)
+                        TextButton(onClick = onRepair, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                            Text(if (pairingStatus == PairingStatus.CODE_CHANGED) "Re-pair" else "Pair", fontSize = 12.sp)
+                        }
                 }
                 StatusPills(tState, lockAngleDeg(), onOpenSettings)
             }
