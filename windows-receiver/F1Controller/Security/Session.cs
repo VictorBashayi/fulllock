@@ -72,12 +72,15 @@ public sealed class Session
 
     AcceptResult AcceptPing(ReadOnlySpan<byte> d, out int n)
     {
-        if (d.Length != PingDatagramSize || !PacketAuth.TryOpen(_key, PacketAuth.DirPhoneToPc, [], d, out n, out _))
+        if (d.Length != PingDatagramSize || !PacketAuth.TryOpen(_key, PacketAuth.DirPhoneToPc, [], d, out n, out uint ctr))
         {
             n = 0;
             return AcceptResult.Rejected;
         }
         ulong nonce = BinaryPrimitives.ReadUInt64LittleEndian(d[PingNonceOffset..]);
+        // The phone's ctr is shared by pings and controls, so a stale one is a replay.
+        if (ctr <= _lastCtr.GetValueOrDefault(nonce)) { n = 0; return AcceptResult.Rejected; }
+        _lastCtr[nonce] = ctr;
         if (nonce == _active) return AcceptResult.Ping; // keep pending for takeover candidates only
         _pending.Remove(nonce);
         _pending.Add(nonce);

@@ -111,8 +111,9 @@ class Program
 
         // --- Initialize components ---
 
-        var receiver = new UdpReceiver(port, logTransport,
-            new F1Controller.Security.Session(F1Controller.Security.PairingStore.LoadOrCreate(AppPaths.Default.PairingFile).Key));
+        var pairing = F1Controller.Security.PairingStore.LoadOrCreate(AppPaths.Default.PairingFile);
+        var session = new F1Controller.Security.Session(pairing.Key);
+        var receiver = new UdpReceiver(port, logTransport, session);
 
         XInputController? xinput = null;
         if (!noVigem)

@@ -32,7 +32,7 @@ public class SessionTests
             BinaryPrimitives.WriteUInt64LittleEndian(p.AsSpan(8), 0x1122334455667788);
             p[16] = 2;
             Nonce.CopyTo(p, 17);
-            return Seal(PacketAuth.DirPhoneToPc, [], p, 1);
+            return Seal(PacketAuth.DirPhoneToPc, [], p, ++Ctr);
         }
 
         public byte[] Control(uint? ctr = null)
@@ -64,6 +64,27 @@ public class SessionTests
     {
         Assert.Equal(AcceptResult.Ping, Accept(s, p.Ping(), ep));
         Assert.Equal(AcceptResult.ControlNewPhone, Accept(s, p.Control(), ep));
+    }
+
+    [Fact]
+    public void ReplayedPingIsRejected()
+    {
+        var s = NewSession();
+        var ping = new Phone(0x11).Ping();
+        Assert.Equal(AcceptResult.Ping, Accept(s, ping, EpA));
+        Assert.Equal(AcceptResult.Rejected, Accept(s, ping, EpA));
+        Assert.Equal(1, s.RejectedPackets);
+    }
+
+    [Fact]
+    public void PingAfterNewerControlWithOlderCtrIsRejected()
+    {
+        var s = NewSession();
+        var p = new Phone(0x11);
+        var ping = p.Ping();
+        Assert.Equal(AcceptResult.Ping, Accept(s, ping, EpA));
+        Assert.Equal(AcceptResult.ControlNewPhone, Accept(s, p.Control(), EpA));
+        Assert.Equal(AcceptResult.Rejected, Accept(s, ping, EpA));
     }
 
     [Fact]
@@ -200,7 +221,7 @@ public class SessionTests
         var ping = phone.Ping();
         Assert.Equal(AcceptResult.Ping, Accept(s, ping, EpA));
         Assert.Equal(AcceptResult.ControlNewPhone, Accept(s, phone.Control(), EpA));
-        Assert.Equal(AcceptResult.Ping, Accept(s, ping, EpEvil));
+        Assert.Equal(AcceptResult.Rejected, Accept(s, ping, EpEvil));
         Assert.Equal(AcceptResult.Ping, Accept(s, new Phone(0x31).Ping(), EpEvil));
         Assert.Equal(EpA, s.ActiveEndPoint);
     }
@@ -232,7 +253,7 @@ public class SessionTests
         Assert.Equal(AcceptResult.ControlNewPhone, Accept(s, oldControl, EpA));
         Pair(s, new Phone(0x21), EpB);
         // attacker captured A's ping and control earlier and replays both
-        Assert.Equal(AcceptResult.Ping, Accept(s, ping, EpEvil));
+        Assert.Equal(AcceptResult.Rejected, Accept(s, ping, EpEvil));
         Assert.Equal(AcceptResult.Rejected, Accept(s, oldControl, EpEvil));
         Assert.Equal(EpB, s.ActiveEndPoint);
     }

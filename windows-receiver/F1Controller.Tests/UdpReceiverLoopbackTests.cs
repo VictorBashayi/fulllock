@@ -52,7 +52,7 @@ public sealed class UdpReceiverLoopbackTests : IAsyncLifetime
         BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(4), ++_seq);
         p[16] = 2;
         Nonce.CopyTo(p, 17);
-        return Seal(Key, PacketAuth.DirPhoneToPc, [], p, 1);
+        return Seal(Key, PacketAuth.DirPhoneToPc, [], p, ++_ctr);
     }
 
     byte[] Control(short steer, byte[]? key = null)
@@ -121,6 +121,8 @@ public sealed class UdpReceiverLoopbackTests : IAsyncLifetime
         await PairAsync();
         await _phone.SendAsync(Control(0), _pc);
         for (int i = 0; i < 200 && !_rx.IsReceiving; i++) await Task.Delay(10);
+        await _phone.SendAsync(Control(0), _pc); // refresh the 250 ms link window right before sending
+        for (int i = 0; i < 200 && _rx.Session.ActiveEndPoint == null; i++) await Task.Delay(10);
         var state = new byte[16];
         state[0] = 0xFE;
         _rx.SendToPhone(state);
@@ -128,5 +130,30 @@ public sealed class UdpReceiverLoopbackTests : IAsyncLifetime
         Assert.NotNull(d);
         Assert.True(PacketAuth.TryOpen(Key, PacketAuth.DirPcToPhone, [.. _session.PcSession.ToArray(), .. Nonce], d, out var n, out _));
         Assert.Equal(state, d[..n]);
+    }
+
+    [Fact]
+    public async Task JunkDoesNotMarkReceivingOrSetRemote()
+    {
+        await _phone.SendAsync(new byte[ControlPacket.Size], _pc);
+        await _phone.SendAsync(Control(0x1000, RandomNumberGenerator.GetBytes(32)), _pc);
+        for (int i = 0; i < 200 && _rx.RejectedPackets < 2; i++) await Task.Delay(10);
+        Assert.True(_rx.RejectedPackets >= 2);
+        Assert.False(_rx.IsReceiving);
+        Assert.Null(_rx.RemoteAddress);
+    }
+
+    [Fact]
+    public async Task ReplayedPingDoesNotChangeEngineerLevelOrGetPong()
+    {
+        var ping = Ping();
+        await _phone.SendAsync(ping, _pc);
+        Assert.NotNull(await Recv(2000));
+        Assert.Equal(2, _rx.EngineerLevel);
+        var level0 = ping.ToArray();
+        // a replay must be dropped: no pong, no level change
+        await _phone.SendAsync(level0, _pc);
+        Assert.Null(await Recv(300));
+        Assert.True(_rx.RejectedPackets >= 1);
     }
 }
