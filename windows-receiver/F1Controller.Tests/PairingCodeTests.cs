@@ -39,6 +39,13 @@ public class PairingCodeTests
     public void NormalizeRejects(string? s) => Assert.Null(PairingCode.Normalize(s));
 
     [Fact]
+    public void NormalizeRejectsNonAscii()
+    {
+        Assert.Null(PairingCode.Normalize("K7QD9MXP2\u017F"));
+        Assert.Null(PairingCode.Normalize("K7QD9MXP2\uFF11"));
+    }
+
+    [Fact]
     public void FormatGroups() => Assert.Equal("K7QD-9MXP-2A", PairingCode.Format("K7QD9MXP2A"));
 
     [Fact]

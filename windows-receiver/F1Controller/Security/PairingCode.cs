@@ -15,6 +15,7 @@ public static class PairingCode
         var sb = new System.Text.StringBuilder(Length);
         foreach (var raw in input)
         {
+            if (raw > 127) return null; // ToUpperInvariant folds some non-ASCII into the alphabet
             var c = char.ToUpperInvariant(raw);
             if (c is ' ' or '-') continue;
             c = c switch { 'I' or 'L' => '1', 'O' => '0', _ => c };

@@ -7,7 +7,7 @@ public class PacketAuthTests
 {
     static readonly byte[] Ctx = Convert.FromHexString("01020304050607081112131415161718");
     static readonly byte[] V1 = Convert.FromHexString("010000000000000000000000004080000010");
-    static byte[] Key => PacketAuth.DeriveKey("K7QD9MXP2A");
+    static readonly byte[] Key = PacketAuth.DeriveKey("K7QD9MXP2A");
 
     static byte[] Seal(byte dir, byte[] ctx, byte[] payload, uint ctr)
     {
@@ -18,7 +18,7 @@ public class PacketAuthTests
 
     [Fact]
     public void DeriveKeyMatchesVector() =>
-        Assert.Equal("60a20da146d5592c8a6ad61091a0551ecf63753c657085b111d631a5dbdc99d9", Convert.ToHexString(Key).ToLowerInvariant());
+        Assert.Equal("60a20da146d5592c8a6ad61091a0551ecf63753c657085b111d631a5dbdc99d9", Convert.ToHexString(PacketAuth.DeriveKey("K7QD9MXP2A")).ToLowerInvariant());
 
     [Fact]
     public void SealMatchesVector1() => Assert.Equal(
