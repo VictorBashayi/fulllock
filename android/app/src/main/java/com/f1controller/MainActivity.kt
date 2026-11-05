@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -37,6 +39,8 @@ import com.f1controller.engineer.EngineerRadio
 import com.f1controller.engineer.EngineerSettings
 import com.f1controller.input.SteeringProcessor
 import com.f1controller.network.DiscoveryListener
+import com.f1controller.network.PacketAuth
+import com.f1controller.network.PairingStore
 import com.f1controller.network.UdpTransport
 import com.f1controller.network.shouldSwitchServer
 import com.f1controller.sensor.SensorLogger
@@ -63,6 +67,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private lateinit var wifiManager: WifiManager
 
     private lateinit var sensorLogger: SensorLogger
+    private lateinit var pairingStore: PairingStore
     private val transport = UdpTransport()
     private val steeringProcessor = SteeringProcessor()
     private val pedalSettings = PedalSettings()
@@ -108,6 +113,12 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         sensorLogger = SensorLogger(sensorManager, sensorHandler)
         loadSettings()
+        pairingStore = PairingStore(this)
+        transport.auth = pairingStore.key()?.let(::PacketAuth)
+        // Persist the server only once it has proven itself with a valid pong
+        lifecycleScope.launch {
+            transport.state.map { it.isConnected }.distinctUntilChanged().collect { if (it) saveServer() }
+        }
         transport.engineerLevel = { engineerSettings.level }
         engineerRadio = EngineerRadio(this, engineerSettings, lifecycleScope)
         lifecycleScope.launch { transport.radio.collect { engineerRadio.play(it) } }
@@ -173,11 +184,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         val connected = transport.state.value.isConnected
         if (!shouldSwitchServer(connected, transport.serverIp, transport.serverPort, ip, port)) return
         transport.serverIp = ip
-        transport.serverPort = port
-        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putString("server_ip", ip)
-            .putInt("server_port", port)
-            .apply()
+        transport.serverPort = port // candidate only; persisted after a valid pong
         // The send threads captured the old address; restart them on the new one
         if (transport.isRunning()) {
             transport.disconnect()
@@ -215,10 +222,18 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         }
     }
 
-    private fun saveSettings() {
+    /** Only an authenticated server is stored; an unverified candidate never overwrites it. */
+    private fun saveServer() {
+        if (!transport.state.value.isConnected) return
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putString("server_ip", transport.serverIp)
             .putInt("server_port", transport.serverPort)
+            .apply()
+    }
+
+    private fun saveSettings() {
+        saveServer()
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putBoolean("auto_connect", transport.autoConnect)
             .putFloat("curve", steeringProcessor.curve)
             .putBoolean("brake_as_button", pedalSettings.brakeAsButton)
@@ -291,7 +306,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         multicastLock = null
     }
 
-    private companion object {
+    companion object {
         const val PREFS_NAME = "f1controller"
     }
 }
