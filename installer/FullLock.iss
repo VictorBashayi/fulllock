@@ -12,6 +12,8 @@ AppPublisher=Victor Bashayi
 AppPublisherURL=https://github.com/VictorBashayi/fulllock
 AppSupportURL=https://github.com/VictorBashayi/fulllock/issues
 DefaultDirName={autopf}\FullLock
+DisableDirPage=yes
+UsePreviousAppDir=no
 DefaultGroupName=FullLock
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
@@ -49,7 +51,7 @@ Name: "{autodesktop}\FullLock (DS4 pad)"; Filename: "{app}\FullLock.exe"; Parame
 [Run]
 ; Phone mode listens on UDP; allow it on Private networks only (never on public Wi-Fi)
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""FullLock"""; Flags: runhidden waituntilterminated
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""FullLock"" dir=in action=allow program=""{app}\FullLock.exe"" protocol=UDP profile=private"; Flags: runhidden waituntilterminated; StatusMsg: "Adding firewall rule for phone mode..."
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""FullLock"" dir=in action=allow program=""{app}\FullLock.exe"" protocol=UDP localport=5555,20777 remoteip=localsubnet profile=private"; Flags: runhidden waituntilterminated; StatusMsg: "Adding firewall rule for phone mode..."
 
 [UninstallRun]
 Filename: "{app}\FullLock.exe"; Parameters: "--hidhide-cleanup"; Flags: runhidden waituntilterminated; RunOnceId: "HidHideCleanup"

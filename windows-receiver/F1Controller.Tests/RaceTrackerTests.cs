@@ -58,4 +58,21 @@ public class RaceTrackerTests
         Assert.True(tracker.Info.CarAheadInPit);
         Assert.False(tracker.Info.CarBehindInPit);
     }
+
+    [Theory]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    [InlineData(float.NegativeInfinity)]
+    [InlineData(-5f)]
+    [InlineData(1e30f)]
+    public void LapDistanceNonFiniteOrNegativeDoesNotThrow(float lapDistance)
+    {
+        var buf = PlayerLap(1, 0);
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(buf.AsSpan(Header + 12), lapDistance);
+
+        var tracker = new RaceTracker();
+        tracker.Process(buf, Header, 0, 50f);
+
+        Assert.Null(tracker.Info.DeltaMs);
+    }
 }

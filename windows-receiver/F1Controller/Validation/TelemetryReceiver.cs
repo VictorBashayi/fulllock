@@ -147,12 +147,30 @@ public sealed class TelemetryReceiver : IDisposable
                     continue;
                 }
 
-                Handle(result.Buffer);
+                HandleSafely(result.Buffer);
             }
         }
         finally
         {
             _client?.Dispose();
+        }
+    }
+
+    private readonly HashSet<string> _loggedErrors = new();
+
+    /// <summary>Handles one datagram; a bad packet or throwing subscriber must not kill the receive loop.</summary>
+    public bool HandleSafely(byte[] buffer)
+    {
+        try
+        {
+            Handle(buffer);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (_loggedErrors.Add(ex.Message))
+                Console.Error.WriteLine($"[Telemetry] Packet handling failed: {ex.Message}");
+            return false;
         }
     }
 
