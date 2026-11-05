@@ -81,14 +81,28 @@ Uses the XInput `XUSB_GAMEPAD.wButtons` layout directly, so neither side transla
 | 0x4000 | X                  | DRS          |
 | 0x8000 | Y                  | ERS          |
 
-### Ping / Pong (16 bytes)
-
-`[0xFFFFFFFF:u32][seq:u32][timestamp_us:u64]` — phone sends 10 Hz, receiver echoes it
-back unchanged; the phone computes RTT from the echoed timestamp.
-
 ### Pairing and authentication (protocol v2)
 
-Every packet carries a trailer `ctr:u32 LE ‖ tag` (8-byte tag, truncated HMAC-SHA256 under the pairing key). Direction byte `0x01` = phone→PC, `0x02` = PC→phone; context = `pcSession ‖ phoneNonce` (empty for pings). Ping is 25 B and pong 24 B including the pairing fields. The discovery beacon is 11 B: `"FLRX"` + version 2 + port/session fields.
+Every packet on the control port (both directions) ends with a 12-byte trailer:
+`ctr:u32 LE ‖ tag:8`, where `tag` = the first 8 bytes of
+`HMAC-SHA256(key, dir ‖ ctx ‖ payload ‖ ctr)`.
+
+- `dir`: `0x01` phone→PC, `0x02` PC→phone.
+- `ctx`: `pcSession:8 ‖ phoneNonce:8`; empty for pings (the phone doesn't know `pcSession` yet).
+- Phone: picks a random 8-byte `phoneNonce` per connection; pings and controls share one
+  counter, strictly increasing per nonce (the PC drops any ctr ≤ the last it accepted for that nonce).
+- PC: one send counter per run (starts at 1) for pongs and everything else it sends; the
+  phone drops a ctr ≤ the last one under the same `pcSession` (a new `pcSession` = PC restarted).
+
+| Packet | Payload | On the wire |
+|--------|---------|-------------|
+| Discovery beacon (port 5556, broadcast) | 11 B: `[0xFFFFFFFB:u32]["FLRX"][controlPort:u16 LE][version:u8 = 0x02]` | 11 B, no trailer: an unauthenticated hint |
+| Control (phone→PC) | 18 B (above) | 30 B |
+| Ping (phone→PC, 10 Hz) | 25 B: `[0xFFFFFFFF:u32][seq:u32][timestamp_us:u64][level:u8][phoneNonce:8]` | 37 B |
+| Pong (PC→phone) | 24 B: `[first 16 ping bytes][pcSession:8]` | 36 B |
+
+The phone computes RTT from the echoed timestamp and learns `pcSession` from the first valid pong.
+`level` is the engineer verbosity; the PC applies it only from the active phone's pings.
 
 - Key: PBKDF2-HMAC-SHA256, 200,000 iterations, salt `"FullLock-pair-v1"`, over the normalized pair code (I/L→1, O→0, dashes and case ignored).
 - PC stores the code DPAPI-protected in `%APPDATA%\FullLock\pairing.json`. The phone stores the derived key wrapped by an AndroidKeyStore AES-GCM key.

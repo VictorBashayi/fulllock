@@ -35,6 +35,10 @@ someone with access to the PC user account or an unlocked phone, compatibility w
   `HmacSHA256` key (`KeyProtection` with `PURPOSE_SIGN|PURPOSE_VERIFY`), alias `fulllock_pair`.
   Plus the last authenticated server IP in normal prefs. The code itself is not stored.
 
+  > **Amended 2026-11-05 (implementation rulings):** the raw 32-byte key is stored wrapped by an
+  > AndroidKeyStore AES-256-GCM key (alias `fulllock_pair_wrap`) and unwrapped into memory once
+  > at app start, so per-packet HMAC doesn't pay Keystore IPC latency. Forget PC deletes both.
+
 ## 3. Wire protocol (v2)
 
 ### 3.1 Authenticated trailer
@@ -78,6 +82,11 @@ Tags are compared in constant time (`CryptographicOperations.FixedTimeEquals` /
 - **Phone:** drops everything from any source that does not verify with the current session
   (fixes #4). The socket is also `connect()`ed to the authenticated server address.
 
+> **Amended 2026-11-05 (implementation rulings):** pings obey the same per-nonce `ctr` rule
+> (§3.2–3.3): the phone's one counter is shared by pings and controls, and the PC drops a ping
+> whose `ctr` is ≤ the last accepted for that `phoneNonce` (tracked even before the nonce is
+> active). The PC applies a ping's engineer `level` only when its nonce is the active phone's.
+
 ### 3.4 Discovery
 
 The beacon stays unauthenticated (broadcast; nothing to prove yet) but becomes a **hint**:
@@ -98,6 +107,13 @@ valid pong from it (fixes #3). A forged beacon can at most make the phone send a
 - QR rendering: QRCoder (MIT) produces the module matrix; drawn with half-block characters
   (`▀ ▄ █`), black-on-white with a 2-module quiet zone. If the window is too small for the QR,
   only the text code is shown.
+
+> **Amended 2026-11-05 (implementation rulings):** the QR is drawn for a dark console: light
+> modules (including the quiet zone) are filled blocks, dark modules are the console background;
+> the phone scanner accepts inverted and normal codes. While unpaired (or toggled with `P`) the
+> pairing panel replaces the stats rows, so the QR fits a default 120×30 console; if it still
+> doesn't fit, the text code is shown with "Enlarge this window to show the QR code".
+> `--new-code` takes effect on the next FullLock start (a running instance keeps its code).
 
 ### Phone
 - No stored key and a beacon arrives → a **"PC found — pair"** sheet opens automatically, with

@@ -65,7 +65,15 @@ Pairing stops other people on your Wi-Fi from driving your virtual pad. You do i
 2. On the phone, the pairing dialog opens by itself when the PC is found. Tap **Scan QR** (the camera permission is asked only then), or type the code. Case and dashes don't matter, and I, L and O are read as 1, 1 and 0.
 3. After pairing, the QR hides. Press **P** in the PC window to show the code again, for example to pair another phone. Any number of phones can know the code, but only one drives at a time.
 
-To get a new code, run `FullLock.exe --new-code`. It takes effect the next time FullLock starts (a running FullLock keeps the old code), so close and reopen FullLock. Every phone then shows "PC's pair code changed — re-pair".
+To get a new code, open a Command Prompt and run:
+
+```
+"C:\Program Files\FullLock\FullLock.exe" --new-code
+```
+
+With the portable zip, run `FullLock.exe --new-code` from the unzipped folder instead. The new code takes effect the next time FullLock starts (a running FullLock keeps the old code), so close and reopen FullLock. Every phone then shows "PC's pair code changed — re-pair".
+
+"Rejected packets" in the PC window counts up briefly after a PC restart or a code change while the phone reconnects or re-pairs. Otherwise it means something else on the network is sending to FullLock.
 
 **Limitation:** traffic is authenticated (nobody else on the Wi-Fi can drive the pad or pretend to be your PC) but not encrypted, so someone on your Wi-Fi could read the telemetry and inputs.
 
@@ -86,6 +94,7 @@ The game is reading the real pad as well as FullLock's virtual one. Install HidH
 - Make sure both are on the same Wi-Fi network.
 - Set that network to **Private** in Windows (Settings → Network & internet → your network). Setup only allows FullLock through the firewall on Private networks, so it never listens on public Wi-Fi.
 - Some routers block devices from talking to each other ("AP isolation" or "guest network"). If yours does, use the main network.
+- A PC with both Ethernet and Wi-Fi on the same network may take a couple of seconds to connect. If it never connects, disable one of the two adapters.
 
 **"Code doesn't match this PC — check the code on the PC screen".**
 Check the code on the PC window. This message also appears when the PC didn't answer at all (PC off, wrong network, firewall), so make sure FullLock is running and both devices are on the same Wi-Fi. In the app, Settings → Pairing has **Forget PC** and **Re-pair**.
