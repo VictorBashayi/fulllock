@@ -20,6 +20,10 @@ public sealed class AppPathsTests : IDisposable
         Assert.Equal(Path.Combine(Roaming, "pad_settings.json"), Paths().PadSettingsFile);
 
     [Fact]
+    public void PairingFileInRoaming() =>
+        Assert.Equal(Path.Combine(Roaming, "pairing.json"), Paths().PairingFile);
+
+    [Fact]
     public void HidHideStateFile_IsInLocalDir() =>
         Assert.Equal(Path.Combine(Local, "hidhide-state.json"), Paths().HidHideStateFile);
 
