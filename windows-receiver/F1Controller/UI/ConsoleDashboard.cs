@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using F1Controller.Security;
 using F1Controller.Transport;
 
 namespace F1Controller.UI;
@@ -15,17 +16,29 @@ public sealed class ConsoleDashboard
     private readonly Validation.CorrelationLogger? _correlation;
     private readonly RadioSender? _radio;
     private readonly StringBuilder _sb = new(1024);
+    private readonly PairingStore _pairing;
+    private bool _toggled;
     private int _lastHeight;
 
     public ConsoleDashboard(UdpReceiver receiver,
                             Controller.XInputController? xinput,
                             Validation.CorrelationLogger? correlation,
-                            RadioSender? radio = null)
+                            RadioSender? radio,
+                            PairingStore pairing)
     {
+        _pairing = pairing;
         _receiver = receiver;
         _xinput = xinput;
         _correlation = correlation;
         _radio = radio;
+    }
+
+    /// <summary>Pairing is always shown until a phone pairs; afterwards P toggles it.</summary>
+    public bool ShowPairing => !_receiver.Session.HasPaired || _toggled;
+
+    public void HandleKey(char key)
+    {
+        if ((key is 'p' or 'P') && _receiver.Session.HasPaired) _toggled = !_toggled;
     }
 
     public void Render()
@@ -81,6 +94,7 @@ public sealed class ConsoleDashboard
         }
 
         _sb.AppendLine("╚═══════════════════════════════════════════════╝");
+        AppendPairing();
         _sb.AppendLine("  Press Ctrl+C to exit");
 
         // Move cursor to top and overwrite
@@ -104,6 +118,31 @@ public sealed class ConsoleDashboard
         _lastHeight = currentHeight;
     }
 
+    private void AppendPairing()
+    {
+        const int W = 49;
+        void Line(string t) => _sb.AppendLine(Pad(t, W));
+        if (_pairing.WasReset) Line("  Pair code was reset — re-pair your phone");
+        if (_receiver.Session.HasPaired)
+            Line("  Paired ✓ (P = show code)");
+        var rej = _receiver.Session.RejectedPackets;
+        if (rej > 0) Line($"  Rejected packets: {rej}");
+        if (!ShowPairing) return;
+
+        IReadOnlyList<string>? qr = null;
+        try
+        {
+            // rows used so far + 2 text lines + footer line + 1 spare
+            int used = _sb.ToString().Split('\n').Length;
+            qr = QrPanel.Render(PairingCode.ToQrText(_pairing.Code), Console.WindowWidth - 1, Console.WindowHeight - used - 4);
+        }
+        catch (IOException) { } // redirected / no console: text only
+        if (qr != null)
+            foreach (var l in qr) Line("  " + l);
+        Line($"  Pair code: {PairingCode.Format(_pairing.Code)}");
+        Line("  Scan or type this in the FullLock app");
+    }
+
     /// <summary>Compact single-line status for non-interactive output.</summary>
     public void WriteStatusLine()
     {
@@ -113,7 +152,8 @@ public sealed class ConsoleDashboard
             $"[{DateTime.Now:HH:mm:ss}] {(connected ? "connected" : "waiting")} " +
             $"pps={(connected ? _receiver.PacketsPerSecond : 0)} loss={_receiver.PacketLossPercent:F2}% " +
             $"jitter={_receiver.JitterUs:F0}us steer={pkt.Steer} thr={pkt.Throttle} brk={pkt.Brake} " +
-            $"btn=0x{pkt.Buttons:X4} submit={(_xinput?.SubmitLatencyUs ?? 0):F0}us");
+            $"btn=0x{pkt.Buttons:X4} submit={(_xinput?.SubmitLatencyUs ?? 0):F0}us " +
+            (_receiver.Session.HasPaired ? "paired" : "not paired"));
     }
 
     private static string Pad(string s, int width)

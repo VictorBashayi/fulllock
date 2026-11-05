@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using F1Controller.Controller;
@@ -10,6 +11,7 @@ using F1Controller.Validation;
 
 namespace F1Controller;
 
+[SupportedOSPlatform("windows")]
 class Program
 {
     static async Task<int> Main(string[] args)
@@ -22,6 +24,7 @@ class Program
         bool radioDemo = false;
         bool ds4 = false;
         bool hidHideCleanup = false;
+        bool newCode = false;
 
         // Simple argument parsing
         for (int i = 0; i < args.Length; i++)
@@ -56,6 +59,9 @@ class Program
                 case "--hidhide-cleanup":
                     hidHideCleanup = true;
                     break;
+                case "--new-code":
+                    newCode = true;
+                    break;
                 case "--help":
                 case "-h":
                     PrintUsage();
@@ -71,6 +77,14 @@ class Program
         if (hidHideCleanup)
         {
             F1Controller.Pad.PadMode.CreateHidHideGuard(AppPaths.Default, Console.WriteLine)?.Cleanup();
+            return 0;
+        }
+
+        // Rotates the pair code without starting the receiver or touching drivers
+        if (newCode)
+        {
+            var fresh = F1Controller.Security.PairingStore.CreateNew(AppPaths.Default.PairingFile);
+            Console.WriteLine($"New pair code: {F1Controller.Security.PairingCode.Format(fresh.Code)} — re-pair every phone.");
             return 0;
         }
 
@@ -199,7 +213,7 @@ class Program
             wasReceiving = receiving;
         }, null, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50));
 
-        var dashboard = new ConsoleDashboard(receiver, xinput, correlation, radio);
+        var dashboard = new ConsoleDashboard(receiver, xinput, correlation, radio, pairing);
 
         // --- Start tasks ---
 
@@ -226,6 +240,10 @@ class Program
                 {
                     if (interactive)
                     {
+                        // Inside the try: a console without a keyboard handle throws on KeyAvailable
+                        if (!Console.IsInputRedirected)
+                            while (Console.KeyAvailable)
+                                dashboard.HandleKey(Console.ReadKey(intercept: true).KeyChar);
                         dashboard.Render();
                         await Task.Delay(67, cts.Token); // ~15 fps
                     }
@@ -244,6 +262,8 @@ class Program
             }
         }, cts.Token));
 
+        if (!interactive)
+            Console.WriteLine($"Pair code:  {F1Controller.Security.PairingCode.Format(pairing.Code)}");
         Console.WriteLine("Waiting for phone connection... (Ctrl+C to exit)");
 
         try
@@ -326,6 +346,7 @@ class Program
               --no-telemetry    Don't listen for game telemetry / send it to the phone
               --radio-demo      Send one sample engineer call of each priority once the phone connects
               --ds4             Drive with a DualShock 4 held flat (bank to steer) instead of the phone
+              --new-code        Generate a new pair code (every phone must re-pair)
               --hidhide-cleanup Undo FullLock's HidHide changes (used by the uninstaller)
               -h, --help        Show this help
 

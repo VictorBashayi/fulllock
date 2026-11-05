@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -24,7 +25,9 @@ public sealed class PairingStore
         WasReset = reset;
     }
 
+    [SupportedOSPlatform("windows")]
     public static PairingStore LoadOrCreate(string path) => LoadOrCreate(path, DpapiProtect, DpapiUnprotect);
+    [SupportedOSPlatform("windows")]
     public static PairingStore CreateNew(string path) => CreateNew(path, DpapiProtect, DpapiUnprotect);
 
     public static PairingStore LoadOrCreate(string path, Func<byte[], byte[]> protect, Func<byte[], byte[]> unprotect)
@@ -59,6 +62,8 @@ public sealed class PairingStore
         return new PairingStore(code, true, reset);
     }
 
+    [SupportedOSPlatform("windows")]
     private static byte[] DpapiProtect(byte[] d) => ProtectedData.Protect(d, Entropy, DataProtectionScope.CurrentUser);
+    [SupportedOSPlatform("windows")]
     private static byte[] DpapiUnprotect(byte[] d) => ProtectedData.Unprotect(d, Entropy, DataProtectionScope.CurrentUser);
 }
