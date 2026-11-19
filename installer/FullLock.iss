@@ -94,6 +94,14 @@ begin
            'https://github.com/nefarius/' + DisplayName + '/releases/latest', mbError, MB_OK);
 end;
 
+// DisableDirPage does not stop /DIR=; the elevated uninstaller runs the installed FullLock.exe, so refuse non-Program-Files folders.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  if CompareText(Copy(WizardDirValue, 1, Length(ExpandConstant('{autopf}')) + 1), ExpandConstant('{autopf}') + chr(92)) <> 0 then
+    Result := 'FullLock must be installed under ' + ExpandConstant('{autopf}') + '. Run the installer without /DIR.';
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then

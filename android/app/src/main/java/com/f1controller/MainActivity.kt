@@ -106,6 +106,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     // Pairing status inputs
     @Volatile private var lastBeaconNs = 0L
+    private var lastSwitchNs = 0L
     private var attemptUntilMs = 0L          // pairingAttempt stays true until this (3 s after a failed pair)
     private var sheetAutoOpened = false
 
@@ -200,7 +201,11 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private fun onReceiverFound(ip: String, port: Int) {
         lastBeaconNs = System.nanoTime()
         val connected = transport.state.value.isConnected
+        // Cooldown: a beacon flood from another host must not keep resetting the session before a pong can arrive
+        val now = System.nanoTime()
+        if (!connected && transport.serverIp != ip && now - lastSwitchNs < SWITCH_COOLDOWN_NS) return
         if (!shouldSwitchServer(connected, transport.serverIp, transport.serverPort, ip, port)) return
+        lastSwitchNs = now
         transport.serverIp = ip
         transport.serverPort = port // candidate only; persisted after a valid pong
         // The send threads captured the old address; restart them on the new one
@@ -381,6 +386,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     companion object {
         const val PREFS_NAME = "f1controller"
+        private const val SWITCH_COOLDOWN_NS = 3_000_000_000L
     }
 }
 

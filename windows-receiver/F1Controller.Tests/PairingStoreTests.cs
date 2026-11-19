@@ -27,6 +27,18 @@ public sealed class PairingStoreTests : IDisposable
     }
 
     [Fact]
+    public void PairedMarkerSurvivesRestartButNotNewCode()
+    {
+        var a = PairingStore.LoadOrCreate(FilePath, Id, Id);
+        Assert.False(a.PairedBefore);
+        a.MarkPaired();
+        Assert.True(PairingStore.LoadOrCreate(FilePath, Id, Id).PairedBefore);
+        var fresh = PairingStore.CreateNew(FilePath, Id, Id);
+        Assert.False(fresh.PairedBefore);
+        Assert.False(PairingStore.LoadOrCreate(FilePath, Id, Id).PairedBefore);
+    }
+
+    [Fact]
     public void LoadsSameCodeSecondTime()
     {
         var a = PairingStore.LoadOrCreate(FilePath, Id, Id);

@@ -16,13 +16,25 @@ public sealed class PairingStore
     public byte[] Key { get; }
     public bool WasCreated { get; }
     public bool WasReset { get; }
+    /// <summary>True when a phone completed pairing with this same code on an earlier run (the code need not be shown again).</summary>
+    public bool PairedBefore { get; }
 
-    private PairingStore(string code, bool created, bool reset)
+    private readonly string _markerPath;
+
+    private PairingStore(string path, string code, bool created, bool reset)
     {
+        _markerPath = path + ".paired";
+        PairedBefore = !created && File.Exists(_markerPath);
         Code = code;
         Key = PacketAuth.DeriveKey(code);
         WasCreated = created;
         WasReset = reset;
+    }
+
+    /// <summary>Remembers that a phone paired with this code, so later runs keep it off-screen.</summary>
+    public void MarkPaired()
+    {
+        try { File.WriteAllBytes(_markerPath, []); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 
     [SupportedOSPlatform("windows")]
@@ -41,7 +53,7 @@ public sealed class PairingStore
                 if (m is { version: 1, code: not null })
                 {
                     var code = PairingCode.Normalize(Encoding.ASCII.GetString(unprotect(Convert.FromBase64String(m.code))));
-                    if (code != null) return new PairingStore(code, false, false);
+                    if (code != null) return new PairingStore(path, code, false, false);
                 }
             }
             catch (Exception) { } // any read/parse/unprotect failure -> fresh code below
@@ -59,7 +71,8 @@ public sealed class PairingStore
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         File.WriteAllText(path + ".tmp", json);
         File.Move(path + ".tmp", path, overwrite: true);
-        return new PairingStore(code, true, reset);
+        File.Delete(path + ".paired"); // a new code has never been paired
+        return new PairingStore(path, code, true, reset);
     }
 
     [SupportedOSPlatform("windows")]

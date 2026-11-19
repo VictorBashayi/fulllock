@@ -127,6 +127,7 @@ class Program
 
         var pairing = F1Controller.Security.PairingStore.LoadOrCreate(AppPaths.Default.PairingFile);
         var session = new F1Controller.Security.Session(pairing.Key);
+        session.Paired += pairing.MarkPaired;
         var receiver = new UdpReceiver(port, logTransport, session);
 
         XInputController? xinput = null;
@@ -264,7 +265,7 @@ class Program
             }
         }, cts.Token));
 
-        if (!interactive)
+        if (!interactive && !pairing.PairedBefore)
             Console.WriteLine($"Pair code:  {F1Controller.Security.PairingCode.Format(pairing.Code)}");
         Console.WriteLine("Waiting for phone connection... (Ctrl+C to exit)");
 

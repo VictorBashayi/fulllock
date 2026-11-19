@@ -34,11 +34,12 @@ public sealed class ConsoleDashboard
     }
 
     /// <summary>Pairing is always shown until a phone pairs; afterwards P toggles it.</summary>
-    public bool ShowPairing => !_receiver.Session.HasPaired || _toggled;
+    private bool Known => _receiver.Session.HasPaired || _pairing.PairedBefore;
+    public bool ShowPairing => !Known || _toggled;
 
     public void HandleKey(char key)
     {
-        if ((key is 'p' or 'P') && _receiver.Session.HasPaired) _toggled = !_toggled;
+        if ((key is 'p' or 'P') && Known) _toggled = !_toggled;
     }
 
     public void Render()
@@ -140,7 +141,7 @@ public sealed class ConsoleDashboard
     private IEnumerable<string> PairingNotes()
     {
         if (_pairing.WasReset) yield return "  Pair code was reset — re-pair your phone";
-        if (_receiver.Session.HasPaired) yield return ShowPairing ? "  Paired ✓ (P = hide code)" : "  Paired ✓ (P = show code)";
+        if (Known) yield return (_receiver.Session.HasPaired ? "  Paired ✓" : "  Paired before") + (ShowPairing ? " (P = hide code)" : " (P = show code)");
         var rej = _receiver.Session.RejectedPackets;
         if (rej > 0) yield return $"  Rejected packets: {rej}";
     }
