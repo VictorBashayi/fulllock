@@ -16,6 +16,7 @@ public sealed class AppPaths(string roamingDir, string localDir, string exeDir)
 
     public string PadSettingsFile => Path.Combine(roamingDir, "pad_settings.json");
     public string PairingFile => Path.Combine(roamingDir, "pairing.json");
+    public string PbFile => Path.Combine(roamingDir, "pbs.json");
     public string LogsDir => Path.Combine(localDir, "logs");
     public string HidHideStateFile => Path.Combine(localDir, "hidhide-state.json");
 
