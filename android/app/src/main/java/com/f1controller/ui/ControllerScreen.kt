@@ -212,9 +212,9 @@ fun ControllerScreen(
                 },
                 color = Palette.Red,
                 asButton = pedalSettings.brakeAsButton,
-                modifier = Modifier.weight(0.16f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
+                modifier = Modifier.weight(0.14f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
             )
-            Box(Modifier.weight(0.19f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+            Box(Modifier.weight(0.23f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                 DPad(buttonMask, onButton)
             }
             Column(
@@ -277,7 +277,7 @@ fun ControllerScreen(
                 },
                 color = Palette.Cyan,
                 asButton = pedalSettings.throttleAsButton,
-                modifier = Modifier.weight(0.16f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
+                modifier = Modifier.weight(0.14f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
             )
         }
     }
@@ -468,7 +468,7 @@ private fun FaceButtons(
     onButton: (bit: Int, pressed: Boolean) -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f, matchHeightConstraintsFirst = true)) {
-        val d = min(maxWidth.value, maxHeight.value).dp / 2.8f
+        val d = min(maxWidth.value, maxHeight.value).dp / 2.5f
         @Composable
         fun Face(label: String, bit: Int, color: Color, align: Alignment) {
             PanelButton(
