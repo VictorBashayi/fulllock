@@ -17,7 +17,8 @@ public class RaceTrackerTests
         buf[o + 36] = 2;          // active
     }
 
-    private static byte[] PlayerLap(byte lap, uint lastLapMs, bool invalid = false, byte driverStatus = 1)
+    private static byte[] PlayerLap(byte lap, uint lastLapMs, bool invalid = false, byte driverStatus = 1,
+        byte sector = 0, ushort s1 = 0, ushort s2 = 0)
     {
         var buf = new byte[Header + 22 * Entry];
         Car(buf, 0, position: 1, pitStatus: 0);
@@ -25,6 +26,9 @@ public class RaceTrackerTests
         buf[o + 25] = lap;
         buf[o + 29] = (byte)(invalid ? 1 : 0);
         buf[o + 35] = driverStatus;
+        buf[o + 28] = sector;
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o + 8), s1);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o + 10), s2);
         System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), lastLapMs);
         return buf;
     }
@@ -85,6 +89,14 @@ public class RaceTrackerTests
         return laps;
     }
 
+    /// <summary>Drives sectors 1 and 2 of <paramref name="lap"/> so a crossing has real sector times behind it.</summary>
+    private static float Sectors(RaceTracker t, byte lap, float time, bool invalid = false, byte status = 1)
+    {
+        t.Process(PlayerLap(lap, 0, invalid, status, sector: 1, s1: 25000), Header, 0, time + 25);
+        t.Process(PlayerLap(lap, 0, invalid, status, sector: 2, s1: 25000, s2: 30000), Header, 0, time + 55);
+        return time + 55;
+    }
+
     [Fact]
     public void LapCompleteRaisesEvent()
     {
@@ -93,8 +105,10 @@ public class RaceTrackerTests
         tracker.Process(PlayerLap(1, 0), Header, 0, 50f);
         tracker.Process(PlayerLap(2, 0), Header, 0, 51f);        // out-lap crossing, no time yet
         Assert.Empty(laps);
-        tracker.Process(PlayerLap(3, 80000), Header, 0, 90f);
-        tracker.Process(PlayerLap(4, 82000), Header, 0, 170f);   // slower valid lap still raises
+        float t = Sectors(tracker, 2, 51f);
+        tracker.Process(PlayerLap(3, 80000), Header, 0, t + 20);
+        t = Sectors(tracker, 3, t + 20);
+        tracker.Process(PlayerLap(4, 82000), Header, 0, t + 20); // slower valid lap still raises
         Assert.Equal(new uint[] { 80000, 82000 }, laps);
     }
 
@@ -104,8 +118,8 @@ public class RaceTrackerTests
         var tracker = new RaceTracker();
         var laps = Laps(tracker);
         tracker.Process(PlayerLap(2, 0), Header, 0, 50f);
-        tracker.Process(PlayerLap(2, 0, invalid: true), Header, 0, 70f);   // flag set before the crossing
-        tracker.Process(PlayerLap(3, 80000), Header, 0, 90f);
+        float t = Sectors(tracker, 2, 50f, invalid: true);   // flag set before the crossing
+        tracker.Process(PlayerLap(3, 80000), Header, 0, t + 20);
         Assert.Empty(laps);
     }
 
@@ -114,8 +128,9 @@ public class RaceTrackerTests
     {
         var tracker = new RaceTracker();
         var laps = Laps(tracker);
-        tracker.Process(PlayerLap(2, 0, driverStatus: 3), Header, 0, 50f);   // out-lap
-        tracker.Process(PlayerLap(3, 80000), Header, 0, 90f);
+        tracker.Process(PlayerLap(2, 0, driverStatus: 3), Header, 0, 50f);
+        float t = Sectors(tracker, 2, 50f, status: 3);        // still an out-lap at the line
+        tracker.Process(PlayerLap(3, 80000), Header, 0, t + 20);
         Assert.Empty(laps);
     }
 
@@ -125,7 +140,19 @@ public class RaceTrackerTests
         var tracker = new RaceTracker();
         var laps = Laps(tracker);
         tracker.Process(PlayerLap(5, 0), Header, 0, 50f);
-        tracker.Process(PlayerLap(2, 80000), Header, 0, 90f);
+        float t = Sectors(tracker, 5, 50f);
+        tracker.Process(PlayerLap(2, 80000), Header, 0, t + 20);
+        Assert.Empty(laps);
+    }
+
+    [Fact]
+    public void PartialLapWithoutSectorTimesDoesNotRaise()
+    {
+        // e.g. a Time Trial restart that steps the lap number while still "flying": a short time, no S1/S2
+        var tracker = new RaceTracker();
+        var laps = Laps(tracker);
+        tracker.Process(PlayerLap(2, 0), Header, 0, 50f);
+        tracker.Process(PlayerLap(3, 12000), Header, 0, 70f);
         Assert.Empty(laps);
     }
 
@@ -136,9 +163,10 @@ public class RaceTrackerTests
         int calls = 0;
         tracker.OnPlayerLapCompleted += _ => { calls++; throw new InvalidOperationException("boom"); };
         tracker.Process(PlayerLap(2, 0), Header, 0, 50f);
-        Assert.Throws<InvalidOperationException>(() => tracker.Process(PlayerLap(3, 80000), Header, 0, 90f));
+        float t = Sectors(tracker, 2, 50f);
+        Assert.Throws<InvalidOperationException>(() => tracker.Process(PlayerLap(3, 80000), Header, 0, t + 20));
         Assert.Equal(3, tracker.Info.CurrentLap);
-        tracker.Process(PlayerLap(3, 80000), Header, 0, 91f);
+        tracker.Process(PlayerLap(3, 80000), Header, 0, t + 21);
         Assert.Equal(1, calls);
     }
 }

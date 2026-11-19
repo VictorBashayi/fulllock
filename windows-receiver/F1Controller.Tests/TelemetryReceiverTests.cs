@@ -51,7 +51,7 @@ public class TelemetryReceiverTests
         return buf;
     }
 
-    private static byte[] LapPacket(byte lap, uint lastLapMs, float sessionTime)
+    private static byte[] LapPacket(byte lap, uint lastLapMs, float sessionTime, byte sector = 0, ushort s1 = 0, ushort s2 = 0)
     {
         var buf = Header2021(2, 22 * 43, sessionTime);
         int o = 24;
@@ -59,8 +59,18 @@ public class TelemetryReceiverTests
         buf[o + 24] = 1;   // position
         buf[o + 25] = lap;
         buf[o + 35] = 1;   // flying lap
+        buf[o + 28] = sector;
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o + 8), s1);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o + 10), s2);
         buf[o + 36] = 2;   // active
         return buf;
+    }
+
+    /// <summary>Sector 1 and 2 of <paramref name="lap"/> so the crossing after it is a whole lap.</summary>
+    private static void DriveSectors(TelemetryReceiver rx, byte lap, float time)
+    {
+        rx.HandleSafely(LapPacket(lap, 0, time + 25, sector: 1, s1: 25000));
+        rx.HandleSafely(LapPacket(lap, 0, time + 55, sector: 2, s1: 25000, s2: 30000));
     }
 
     private static string TempPb() => Path.Combine(Path.GetTempPath(), "pbrx-" + Guid.NewGuid().ToString("N") + ".json");
@@ -73,11 +83,13 @@ public class TelemetryReceiverTests
         rx.HandleSafely(SessionPacket(12, 5));
         rx.HandleSafely(StatusPacket(8));                       // full wets
         rx.HandleSafely(LapPacket(1, 0, 50f));
+        DriveSectors(rx, 1, 50f);
         rx.HandleSafely(LapPacket(2, 95000, 150f));
         Assert.Equal(95000u, pbs.Get(5, 12, wet: true));
         Assert.Equal(0u, pbs.Get(5, 12, wet: false));
 
         rx.HandleSafely(StatusPacket(16));                      // softs
+        DriveSectors(rx, 2, 150f);
         rx.HandleSafely(LapPacket(3, 80000, 240f));
         Assert.Equal(80000u, pbs.Get(5, 12, wet: false));
         Assert.Equal(95000u, pbs.Get(5, 12, wet: true));
@@ -89,6 +101,7 @@ public class TelemetryReceiverTests
         var pbs = new PbStore(TempPb());
         using var rx = new TelemetryReceiver(0, pbs);
         rx.HandleSafely(LapPacket(1, 0, 50f));
+        DriveSectors(rx, 1, 50f);
         rx.HandleSafely(LapPacket(2, 95000, 150f));
         Assert.Equal(0u, pbs.Get(0, 12, false));
     }

@@ -196,7 +196,8 @@ public sealed class RaceTracker
                 }
                 if (isPlayer)
                 {
-                    if (lastLap > 0 && !car.LapInvalid && lapNum == car.LapNum + 1 && car.DriverStatus is 1 or 4)
+                    if (lastLap > 0 && !car.LapInvalid && lapNum == car.LapNum + 1 && car.DriverStatus is 1 or 4
+                        && car.S1 > 0 && car.S2 > 0) // both sector times seen: the whole lap was driven
                         completedLap = lastLap;
                     if (lastLap > 0 && !car.LapInvalid && (_myBestLap == 0 || lastLap < _myBestLap))
                     {
