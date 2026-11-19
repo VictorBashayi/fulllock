@@ -4,7 +4,6 @@ name: Release
 on:
   push:
     tags: ['v*']
-    branches: ['release/fulllock-v1'] # TEMP: dry run before merge, remove before tagging
   workflow_dispatch:
 permissions:
   contents: read
