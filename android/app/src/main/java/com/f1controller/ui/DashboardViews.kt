@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.f1controller.network.TrackNames
 import com.f1controller.network.UdpTransport
 import kotlin.math.abs
 
@@ -155,6 +156,18 @@ internal fun TimingView(race: UdpTransport.RaceState?) {
                     TimingRow("BEHIND", race.gapBehindMs?.let { "−" + formatGap(it) } ?: "—")
                 }
             }
+            if (race.trackId >= 0) {
+                // Time Trial PBs for this track; cyan for a PB set on the lap just finished
+                val fresh = race.currentLapMs < 5000
+                fun pbColor(pb: Long) = if (fresh && pb > 0 && pb == race.lastLapMs) Palette.Cyan else Palette.Text
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Label("PB · ${TrackNames.short(race.trackId).uppercase()}")
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TimingRow("DRY", pbText(race.ttDryMs), pbColor(race.ttDryMs))
+                        TimingRow("WET", pbText(race.ttWetMs), pbColor(race.ttWetMs))
+                    }
+                }
+            }
         }
     }
 }
@@ -174,11 +187,13 @@ private fun SectorBar(name: String, ms: Int, status: Int, modifier: Modifier) {
     }
 }
 
+private fun pbText(ms: Long) = if (ms > 0) formatLap(ms) else "—"
+
 @Composable
-private fun TimingRow(label: String, value: String) {
+private fun TimingRow(label: String, value: String, color: Color = Palette.Text) {
     Row {
         Text("$label ", fontFamily = Mono, fontSize = 11.sp, color = Palette.TextDim)
-        Text(value, fontFamily = Mono, fontSize = 11.sp, color = Palette.Text)
+        Text(value, fontFamily = Mono, fontSize = 11.sp, color = color)
     }
 }
 

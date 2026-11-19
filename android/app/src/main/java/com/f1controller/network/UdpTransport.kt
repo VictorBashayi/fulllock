@@ -35,7 +35,7 @@ import kotlin.concurrent.thread
  *   [0xFE 0xFF 0xFF 0xFF][gear:i8][revLightsPct:u8][drsAllowed:u8][drsOpen:u8]
  *   [speedKph:u16][rpm:u16][ersPct:u8][ersMode:u8][pitLimiter:u8][reserved:u8]
  *
- * Race state packet (54 bytes, receiver → phone, ~10 Hz): marker 0xFFFFFFFD;
+ * Race state packet (62 bytes, 54 from older receivers, receiver → phone, ~10 Hz): marker 0xFFFFFFFD;
  * layout in PacketParser.cs (WriteRaceState) and [onRaceState].
  *
  * Radio packet (9 + text bytes, receiver → phone, one per engineer call, sent 3×):
@@ -102,6 +102,9 @@ class UdpTransport {
         val gapBehindMs: Int?,
         val tyreWear: IntArray,   // %
         val tyreTemp: IntArray,   // surface °C
+        val trackId: Int = -1,    // F1 2021 track id, -1 unknown / old receiver
+        val ttDryMs: Long = 0,    // Time Trial personal bests for the track, 0 = none
+        val ttWetMs: Long = 0,
     )
 
     private val _race = MutableStateFlow<RaceState?>(null)
@@ -375,7 +378,7 @@ class UdpTransport {
                         // Radio packets can be shorter than the 16-byte minimum of the others
                         RADIO_MARKER -> decodeRadioCall(bb)?.let(::onRadioCall)
                         GAME_STATE_MARKER -> if (n >= 16) onGameState(bb)
-                        RACE_STATE_MARKER -> if (n >= RACE_STATE_SIZE) onRaceState(bb)
+                        RACE_STATE_MARKER -> if (n >= RACE_STATE_SIZE) onRaceState(bb, n)
                     }
                 }
             } catch (_: java.net.SocketTimeoutException) {
@@ -423,40 +426,8 @@ class UdpTransport {
         lastTelemetryNs = System.nanoTime()
     }
 
-    private fun onRaceState(bb: ByteBuffer) {
-        fun u8() = bb.get().toInt() and 0xFF
-        val position = u8()
-        val totalLaps = u8()
-        val currentLap = u8()
-        val sector = u8()
-        val lapInvalid = u8() != 0
-        val compound = u8()
-        val tyreAge = u8()
-        val flags = u8()
-        val currentLapMs = bb.int.toLong() and 0xFFFFFFFFL
-        val lastLapMs = bb.int.toLong() and 0xFFFFFFFFL
-        val bestLapMs = bb.int.toLong() and 0xFFFFFFFFL
-        val delta = bb.int
-        val s1 = bb.short.toInt() and 0xFFFF
-        val s2 = bb.short.toInt() and 0xFFFF
-        val s1Status = u8()
-        val s2Status = u8()
-        val fuel = bb.short / 100f
-        val gapAhead = bb.int
-        val gapBehind = bb.int
-        val wear = IntArray(4) { u8() }
-        val temp = IntArray(4) { u8() }
-
-        _race.value = RaceState(
-            position, totalLaps, currentLap, sector, lapInvalid, compound, tyreAge,
-            currentLapMs, lastLapMs, bestLapMs,
-            deltaMs = if (flags and 1 != 0) delta else null,
-            s1Ms = s1, s2Ms = s2, s1Status = s1Status, s2Status = s2Status,
-            fuelLaps = fuel,
-            gapAheadMs = if (flags and 2 != 0) gapAhead else null,
-            gapBehindMs = if (flags and 4 != 0) gapBehind else null,
-            tyreWear = wear, tyreTemp = temp,
-        )
+    private fun onRaceState(bb: ByteBuffer, n: Int) {
+        _race.value = parseRaceState(bb, n)
         lastRaceNs = System.nanoTime()
     }
 
