@@ -52,15 +52,16 @@ public readonly record struct ControlPacket(
     }
 
     /// <summary>
-    /// Race timing and car condition sent to the phone ~10 Hz (54 bytes, little-endian):
+    /// Race timing and car condition sent to the phone ~10 Hz (62 bytes, little-endian; the first 54 are the original layout):
     /// [marker:u32][position:u8][totalLaps:u8][currentLap:u8][sector:u8][lapInvalid:u8]
     /// [compound:u8][tyreAge:u8][flags:u8 (1=delta, 2=gapAhead, 4=gapBehind valid)]
     /// [currentLapMs:u32][lastLapMs:u32][bestLapMs:u32][deltaMs:i32][s1Ms:u16][s2Ms:u16]
     /// [s1Status:u8][s2Status:u8][fuelLaps×100:i16][gapAheadMs:i32][gapBehindMs:i32]
-    /// [tyreWear%:u8×4][tyreTempC:u8×4][reserved:u16]   (tyres FL, FR, RL, RR)
+    /// [tyreWear%:u8×4][tyreTempC:u8×4][trackId:i8 (-1 unknown)][reserved:u8]   (tyres FL, FR, RL, RR)
+    /// [ttDryPbMs:u32][ttWetPbMs:u32]   (Time Trial personal bests for the track, 0 = none)
     /// </summary>
     public const uint RaceStateMarker = 0xFFFFFFFD;
-    public const int RaceStateSize = 54;
+    public const int RaceStateSize = 62;
 
     public static void WriteRaceState(Span<byte> dest, Validation.RaceState s)
     {
@@ -87,8 +88,10 @@ public readonly record struct ControlPacket(
         BinaryPrimitives.WriteInt32LittleEndian(dest[40..], t.GapBehindMs ?? 0);
         s.TyreWear.AsSpan(0, 4).CopyTo(dest[44..]);
         s.TyreTemp.AsSpan(0, 4).CopyTo(dest[48..]);
-        dest[52] = 0;
+        dest[52] = unchecked((byte)s.TrackId);
         dest[53] = 0;
+        BinaryPrimitives.WriteUInt32LittleEndian(dest[54..], s.TtDryMs);
+        BinaryPrimitives.WriteUInt32LittleEndian(dest[58..], s.TtWetMs);
     }
 
     /// <summary>

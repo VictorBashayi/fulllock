@@ -152,7 +152,7 @@ class Program
         if (validate)
             correlation = new CorrelationLogger();
         if (validate || !noTelemetry)
-            telemetry = new TelemetryReceiver(20777);
+            telemetry = new TelemetryReceiver(20777, new PbStore(AppPaths.Default.PbFile));
 
         var disposables = new List<IDisposable>();
 
