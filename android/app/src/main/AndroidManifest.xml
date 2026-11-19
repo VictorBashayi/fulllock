@@ -17,6 +17,8 @@
 
     <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="true" />
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
+    <!-- QR pairing only; typing the code works without a camera -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!-- Android 11+: without this the app can't see the text-to-speech engine (engineer voice) -->
     <queries>
@@ -26,7 +28,7 @@
     </queries>
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

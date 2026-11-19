@@ -1,9 +1,11 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using F1Controller.Controller;
+using F1Controller.Pad.HidHide;
 
 namespace F1Controller.Pad;
 
@@ -29,13 +31,33 @@ public static class PadMode
         return (short)Math.Clamp(v, short.MinValue, short.MaxValue);
     }
 
+    private const double NoPadHintSeconds = 3.0;
+
+    /// <summary>Status before the first report: after a few seconds, say what usually fixes it.</summary>
+    public static string WaitingStatus(double secondsWaiting) =>
+        secondsWaiting < NoPadHintSeconds
+            ? "Waiting for DS4…"
+            : "No DualShock 4 found. Plug it in with a USB data cable, and close DS4Windows / Steam Input if they're running.";
+
+    /// <summary>The HidHide guard for this exe, or null (with a hint logged) when HidHide isn't installed.</summary>
+    public static HidHideGuard? CreateHidHideGuard(AppPaths paths, Action<string> log)
+    {
+        var cli = HidHideCli.Locate();
+        if (cli == null)
+        {
+            log("[HidHide] Not installed — games may see your DS4 twice. Get it: " + Drivers.HidHideUrl);
+            return null;
+        }
+        return new HidHideGuard(cli, Environment.ProcessPath!, paths.HidHideStateFile, log);
+    }
+
     public static async Task<int> RunAsync(bool noVigem, bool interactive)
     {
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
-        Console.WriteLine("F1 Controller — DS4 pad mode");
-        Console.WriteLine("============================");
+        Console.WriteLine("FullLock — DS4 pad mode");
+        Console.WriteLine("=======================");
         foreach (var name in new[] { "DS4Windows", "JoyShockMapper" })
             if (Process.GetProcessesByName(name).Length > 0)
                 Console.WriteLine($"[Warning] {name} is running — close it, it will fight over the pad.");
@@ -43,6 +65,8 @@ public static class PadMode
         XInputController? xinput = null;
         if (!noVigem)
         {
+            if (!Drivers.ViGEmBusInstalled)
+                return Drivers.ReportViGEmMissing(interactive);
             try
             {
                 xinput = new XInputController();
@@ -50,16 +74,31 @@ public static class PadMode
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ViGEm] Failed to initialize: {ex.Message}");
-                Console.WriteLine("[ViGEm] Is ViGEmBus driver installed? https://github.com/nefarius/ViGEmBus/releases");
-                xinput = null;
+                return Drivers.ReportViGEmMissing(interactive, $"Failed to initialize: {ex.Message}");
             }
         }
 
-        var settings = PadSettings.Load(PadSettings.DefaultPath);
+        var paths = AppPaths.Default;
+        paths.EnsureCreated();
+        if (paths.MigrateLegacySettings())
+            Console.WriteLine($"[Settings] Moved your pad settings to {paths.PadSettingsFile}");
+        var settings = PadSettings.Load(paths.PadSettingsFile);
         var steering = new PadSteering(settings);
         var reader = new Ds4Reader();
         if (xinput != null) xinput.OnRumble += reader.SetRumble;
+
+        // HidHide messages: the dashboard redraws the whole screen, so show them in its notice line
+        string? notice = null;
+        Action<string> log = interactive ? s => notice = s : Console.WriteLine;
+        HidHideGuard? guard = xinput != null ? CreateHidHideGuard(paths, log) : null;
+        guard?.RestorePending();
+        if (guard != null) reader.OnConnected += p => guard.EnsureHidden(HidHidePaths.ToInstancePath(p));
+        // Console window closed: Windows gives us ~5 s, enough to un-hide the pad
+        using var onClose = PosixSignalRegistration.Create(PosixSignal.SIGHUP, ctx =>
+        {
+            guard?.Restore();
+            cts.Cancel();
+        });
 
         // Reader thread only: bias window on the first connection, then steer every report
         long biasUntil = 0;
@@ -100,6 +139,7 @@ public static class PadMode
 
         if (interactive) Console.Clear();
         string? saveError = null;
+        var waiting = Stopwatch.StartNew();
         while (!cts.Token.IsCancellationRequested)
         {
             try
@@ -108,14 +148,14 @@ public static class PadMode
                 if (!Console.IsInputRedirected)
                     while (Console.KeyAvailable)
                         if (HandleKey(Console.ReadKey(intercept: true).KeyChar, settings)
-                            && !settings.TrySave(PadSettings.DefaultPath, out saveError))
+                            && !settings.TrySave(paths.PadSettingsFile, out saveError))
                             saveError = $"Settings not saved: {saveError}";
 
                 string status = reader.IsConnected && !released
                     ? (calibrated ? saveError ?? "Driving" : "Keep the pad still — calibrating…")
-                    : reader.LastReportTicks != 0 ? "Pad lost — reconnecting" : "Waiting for DS4…";
+                    : reader.LastReportTicks != 0 ? "Pad lost — reconnecting" : WaitingStatus(waiting.Elapsed.TotalSeconds);
 
-                if (interactive) dashboard.Render(status, steer);
+                if (interactive) dashboard.Render(status, steer, notice);
                 else dashboard.WriteStatusLine(status, steer);
                 await Task.Delay(interactive ? 67 : 1000, cts.Token);
             }
@@ -124,6 +164,7 @@ public static class PadMode
         }
 
         await readerTask;
+        guard?.Restore();
         xinput?.Dispose();
         if (interactive) Console.CursorVisible = true;
         Console.WriteLine();

@@ -6,7 +6,7 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "Receiver: build",
-      "program": "${workspaceFolder}/windows-receiver/F1Controller/bin/Debug/net8.0/F1Controller.dll",
+      "program": "${workspaceFolder}/windows-receiver/F1Controller/bin/Debug/net8.0/FullLock.dll",
       "args": ["--port", "5555"],
       "cwd": "${workspaceFolder}/windows-receiver/F1Controller",
       // Integrated terminal so the live dashboard renders

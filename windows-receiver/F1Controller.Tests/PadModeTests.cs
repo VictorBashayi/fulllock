@@ -29,4 +29,14 @@ public class PadModeTests
         Assert.True(PadMode.StickAxis(0, invert: true) > 32000);   // DS4 stick pushed up
         Assert.True(PadMode.StickAxis(255, invert: true) < -32000);
     }
+
+    [Fact]
+    public void WaitingStatus_ShowsHintAfter3Seconds()
+    {
+        Assert.Equal("Waiting for DS4…", PadMode.WaitingStatus(secondsWaiting: 2.9));
+        var hint = PadMode.WaitingStatus(secondsWaiting: 3.1);
+        Assert.Contains("No DualShock 4 found", hint);
+        Assert.Contains("USB data cable", hint);
+        Assert.Contains("DS4Windows", hint);
+    }
 }

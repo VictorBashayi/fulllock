@@ -49,3 +49,19 @@ Thumbs.db
 
 # Downloaded archives (Gradle distributions etc.)
 *.zip
+
+# Installer build output and downloaded driver installers
+installer/out/
+installer/deps/
+
+# Android release signing (never commit)
+*.jks
+*.keystore
+keystore.properties
+
+# Secrets
+*.pem
+*.key
+*.p12
+*.pfx
+.env

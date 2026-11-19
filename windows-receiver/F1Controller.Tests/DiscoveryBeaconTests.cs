@@ -11,7 +11,7 @@ public class DiscoveryBeaconTests
     {
         var buf = new byte[ControlPacket.DiscoverySize];
         ControlPacket.WriteDiscovery(buf, 5555);
-        Assert.Equal(new byte[] { 0xFB, 0xFF, 0xFF, 0xFF, (byte)'F', (byte)'1', (byte)'R', (byte)'X', 0xB3, 0x15 },
+        Assert.Equal(new byte[] { 0xFB, 0xFF, 0xFF, 0xFF, (byte)'F', (byte)'L', (byte)'R', (byte)'X', 0xB3, 0x15, 0x02 },
             buf);
     }
 

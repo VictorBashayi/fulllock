@@ -18,6 +18,9 @@ public sealed class Ds4Reader
 
     public event Action<Ds4Report>? OnReport;
 
+    /// <summary>Raised with the HID device path each time a pad is opened (e.g. after a USB port change).</summary>
+    public event Action<string>? OnConnected;
+
     public bool IsConnected { get; private set; }
     public bool IsBluetooth { get; private set; }
 
@@ -51,6 +54,7 @@ public sealed class Ds4Reader
             {
                 using (stream)
                 {
+                    OnConnected?.Invoke(device.DevicePath);
                     try { ReadLoop(device, stream, ct); }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {

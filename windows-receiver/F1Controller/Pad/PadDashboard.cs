@@ -21,7 +21,7 @@ public sealed class PadDashboard
         _xinput = xinput;
     }
 
-    public void Render(string status, short steer)
+    public void Render(string status, short steer, string? notice = null)
     {
         double steerPct = steer * 100.0 / short.MaxValue;
         string link = _reader.IsConnected
@@ -30,9 +30,10 @@ public sealed class PadDashboard
 
         _sb.Clear();
         _sb.AppendLine("╔═══════════════════════════════════════════════╗");
-        _sb.AppendLine("║   F1 Controller — DS4 pad mode                ║");
+        _sb.AppendLine("║   FullLock — DS4 pad mode                     ║");
         _sb.AppendLine("╠═══════════════════════════════════════════════╣");
-        _sb.AppendLine($"║  Status:       {Pad(status, 30)} ║");
+        // Long messages (hints) don't fit the box: point to the note line under it
+        _sb.AppendLine($"║  Status:       {Pad(status.Length > 30 ? "See note below" : status, 30)} ║");
         _sb.AppendLine($"║  Link:         {Pad(link, 30)} ║");
         _sb.AppendLine($"║  Last error:   {Pad(_reader.LastError ?? "—", 30)} ║");
         _sb.AppendLine("╠═══════════════════════════════════════════════╣");
@@ -46,6 +47,9 @@ public sealed class PadDashboard
         _sb.AppendLine($"║  ViGEm:        {Pad(_xinput?.IsConnected == true ? $"Active — {_xinput.ReportsSubmitted} reports" : "Disabled", 30)} ║");
         _sb.AppendLine("╚═══════════════════════════════════════════════╝");
         _sb.AppendLine("  Press Ctrl+C to exit");
+        // Always written, padded, so a note that went away doesn't linger on screen
+        _sb.AppendLine(Pad(status.Length > 30 ? "  " + status : "", NoteWidth));
+        _sb.AppendLine(Pad(notice != null ? "  " + notice : "", NoteWidth));
 
         try { Console.SetCursorPosition(0, 0); }
         catch { Console.Clear(); }
@@ -57,6 +61,8 @@ public sealed class PadDashboard
         Console.WriteLine(
             $"[{DateTime.Now:HH:mm:ss}] {status} steer={steer} bank={_steering.LastBankDeg:F1} " +
             $"accelBank={_steering.LastAccelBankDeg:F1} lock={_settings.LockDeg} dz={_settings.DeadzoneDeg} curve={_settings.Curve}");
+
+    private const int NoteWidth = 119;
 
     private static string Pad(string s, int width) =>
         s.Length >= width ? s[..width] : s + new string(' ', width - s.Length);

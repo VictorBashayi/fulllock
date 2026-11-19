@@ -31,7 +31,7 @@ public sealed class CorrelationLogger : IDisposable
 
     public CorrelationLogger()
     {
-        var path = $"correlation_log_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+        var path = AppPaths.Default.LogFile("correlation_log", "csv");
         _csv = new StreamWriter(path, append: false);
         _csv.WriteLine("timestamp,sent_steer_i16,game_steer_float,sent_throttle,game_throttle,sent_brake,game_brake");
         Console.WriteLine($"[Validation] Correlation log: {path}");

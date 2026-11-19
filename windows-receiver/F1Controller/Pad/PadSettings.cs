@@ -16,8 +16,6 @@ public sealed class PadSettings
     /// <summary>Centre smoothing 0..1, same as the phone's curve.</summary>
     public float Curve { get; set; }
 
-    public static string DefaultPath => Path.Combine(AppContext.BaseDirectory, "pad_settings.json");
-
     public void NudgeLock(int steps)
     {
         LockDeg = Math.Clamp(LockDeg + steps, 5f, 60f);

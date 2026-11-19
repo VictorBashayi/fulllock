@@ -207,8 +207,8 @@ public sealed class RaceTracker
                 // Each bin holds the lap time when the car first entered it; the
                 // reference time at lapDist is interpolated between two bins.
                 int? delta = null;
-                int bin = (int)(lapDist / BinMetres);
-                if (lapDist >= 0 && bin < MaxBins - 1)
+                int bin = float.IsFinite(lapDist) && lapDist >= 0 ? (int)(lapDist / BinMetres) : -1;
+                if (bin >= 0 && bin < MaxBins - 1)
                 {
                     if (_curTrace[bin] < 0) _curTrace[bin] = (int)curLap;
                     int a = _bestTrace[bin], b = _bestTrace[bin + 1];

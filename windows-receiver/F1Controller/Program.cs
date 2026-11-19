@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using F1Controller.Controller;
@@ -10,6 +11,7 @@ using F1Controller.Validation;
 
 namespace F1Controller;
 
+[SupportedOSPlatform("windows")]
 class Program
 {
     static async Task<int> Main(string[] args)
@@ -21,6 +23,8 @@ class Program
         bool noTelemetry = false;
         bool radioDemo = false;
         bool ds4 = false;
+        bool hidHideCleanup = false;
+        bool newCode = false;
 
         // Simple argument parsing
         for (int i = 0; i < args.Length; i++)
@@ -52,6 +56,12 @@ class Program
                 case "--ds4":
                     ds4 = true;
                     break;
+                case "--hidhide-cleanup":
+                    hidHideCleanup = true;
+                    break;
+                case "--new-code":
+                    newCode = true;
+                    break;
                 case "--help":
                 case "-h":
                     PrintUsage();
@@ -63,12 +73,27 @@ class Program
             }
         }
 
+        // Uninstaller: undo FullLock's HidHide changes and remove it from the whitelist
+        if (hidHideCleanup)
+        {
+            F1Controller.Pad.PadMode.CreateHidHideGuard(AppPaths.Default, Console.WriteLine)?.Cleanup();
+            return 0;
+        }
+
+        // Rotates the pair code without starting the receiver or touching drivers
+        if (newCode)
+        {
+            var fresh = F1Controller.Security.PairingStore.CreateNew(AppPaths.Default.PairingFile);
+            Console.WriteLine($"New pair code: {F1Controller.Security.PairingCode.Format(fresh.Code)} — re-pair every phone.");
+            return 0;
+        }
+
         bool interactive = !Console.IsOutputRedirected;
         if (interactive)
         {
             Console.Clear();
             Console.CursorVisible = false;
-            Console.Title = "F1 Phone Controller — Windows Receiver";
+            Console.Title = "FullLock — Windows Receiver";
         }
 
         // The game saturates CPU/GPU; at normal priority our receive loop waits
@@ -80,13 +105,15 @@ class Program
         if (ds4)
             return await F1Controller.Pad.PadMode.RunAsync(noVigem, interactive);
 
-        Console.WriteLine("F1 Phone Controller — Windows Receiver");
-        Console.WriteLine("======================================");
+        Console.WriteLine("FullLock — Windows Receiver");
+        Console.WriteLine("===========================");
         Console.WriteLine($"  Port:       {port} (announced on UDP {ControlPacket.DiscoveryPort} so the phone finds this PC)");
         Console.WriteLine($"  ViGEm:      {(noVigem ? "disabled" : "enabled")}");
         Console.WriteLine($"  Telemetry:  {(noTelemetry && !validate ? "off" : "F1 game UDP on 20777 → phone dashboard")}");
         Console.WriteLine($"  Validate:   {(validate ? "yes" : "no")}");
         Console.WriteLine($"  Log CSV:    {(logTransport ? "yes" : "no")}");
+        AppPaths.Default.EnsureCreated();
+        Console.WriteLine($"  Logs:       {AppPaths.Default.LogsDir}");
         Console.WriteLine();
 
         using var cts = new CancellationTokenSource();
@@ -98,11 +125,16 @@ class Program
 
         // --- Initialize components ---
 
-        var receiver = new UdpReceiver(port, logTransport);
+        var pairing = F1Controller.Security.PairingStore.LoadOrCreate(AppPaths.Default.PairingFile);
+        var session = new F1Controller.Security.Session(pairing.Key);
+        session.Paired += pairing.MarkPaired;
+        var receiver = new UdpReceiver(port, logTransport, session);
 
         XInputController? xinput = null;
         if (!noVigem)
         {
+            if (!Drivers.ViGEmBusInstalled)
+                return Drivers.ReportViGEmMissing(interactive);
             try
             {
                 xinput = new XInputController();
@@ -110,10 +142,7 @@ class Program
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ViGEm] Failed to initialize: {ex.Message}");
-                Console.WriteLine("[ViGEm] Is ViGEmBus driver installed? https://github.com/nefarius/ViGEmBus/releases");
-                Console.WriteLine("[ViGEm] Continuing without virtual controller...");
-                xinput = null;
+                return Drivers.ReportViGEmMissing(interactive, $"Failed to initialize: {ex.Message}");
             }
         }
 
@@ -135,7 +164,7 @@ class Program
         if (telemetry != null && !noTelemetry)
         {
             // Every call (and any engineer error) also goes to a log file for reviewing the race
-            var callLogWriter = new StreamWriter($"engineer_log_{DateTime.Now:yyyyMMdd_HHmmss}.txt", append: false);
+            var callLogWriter = new StreamWriter(AppPaths.Default.LogFile("engineer_log", "txt"), append: false);
             disposables.Add(callLogWriter);
             var callLog = new CallLog(callLogWriter);
             var engineer = new EngineerService(new EngineerThresholds(),
@@ -185,7 +214,7 @@ class Program
             wasReceiving = receiving;
         }, null, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50));
 
-        var dashboard = new ConsoleDashboard(receiver, xinput, correlation, radio);
+        var dashboard = new ConsoleDashboard(receiver, xinput, correlation, radio, pairing);
 
         // --- Start tasks ---
 
@@ -212,6 +241,10 @@ class Program
                 {
                     if (interactive)
                     {
+                        // Inside the try: a console without a keyboard handle throws on KeyAvailable
+                        if (!Console.IsInputRedirected)
+                            while (Console.KeyAvailable)
+                                dashboard.HandleKey(Console.ReadKey(intercept: true).KeyChar);
                         dashboard.Render();
                         await Task.Delay(67, cts.Token); // ~15 fps
                     }
@@ -225,11 +258,15 @@ class Program
                 catch (OperationCanceledException) { break; }
                 catch
                 {
-                    // Swallow rendering errors (console resize, etc.)
+                    // Swallow rendering errors (console resize, etc.); still wait so a persistent error can't busy-spin
+                    try { await Task.Delay(67, cts.Token); }
+                    catch (OperationCanceledException) { break; }
                 }
             }
         }, cts.Token));
 
+        if (!interactive && !pairing.PairedBefore)
+            Console.WriteLine($"Pair code:  {F1Controller.Security.PairingCode.Format(pairing.Code)}");
         Console.WriteLine("Waiting for phone connection... (Ctrl+C to exit)");
 
         try
@@ -300,9 +337,9 @@ class Program
     private static void PrintUsage()
     {
         Console.WriteLine("""
-            F1 Phone Controller — Windows Receiver
+            FullLock — Windows Receiver
 
-            Usage: F1Controller.exe [options]
+            Usage: FullLock.exe [options]
 
             Options:
               --port <N>        UDP listen port (default: 5555)
@@ -312,13 +349,15 @@ class Program
               --no-telemetry    Don't listen for game telemetry / send it to the phone
               --radio-demo      Send one sample engineer call of each priority once the phone connects
               --ds4             Drive with a DualShock 4 held flat (bank to steer) instead of the phone
+              --new-code        Generate a new pair code (every phone must re-pair)
+              --hidhide-cleanup Undo FullLock's HidHide changes (used by the uninstaller)
               -h, --help        Show this help
 
             Examples:
-              F1Controller.exe                         Normal mode
-              F1Controller.exe --port 6000             Custom port
-              F1Controller.exe --validate              With F1 telemetry correlation
-              F1Controller.exe --no-vigem --log-transport   Transport diagnostics only
+              FullLock.exe                             Normal mode
+              FullLock.exe --port 6000                 Custom port
+              FullLock.exe --validate                  With F1 telemetry correlation
+              FullLock.exe --no-vigem --log-transport   Transport diagnostics only
             """);
     }
 }
