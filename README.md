@@ -9,6 +9,7 @@
 - **Phone mode:** hold your Android phone like a wheel and tilt to steer, with on-screen throttle, brake, gears, DRS and ERS. The PC sees an ordinary Xbox 360 controller.
 - **DualShock 4 mode:** hold a PS4 pad flat and bank it left or right to steer, with the triggers as pedals and rumble passed through from the game.
 - **Race engineer:** in phone mode, the phone shows position, gaps, tyres, fuel and ERS from the game's telemetry, and calls out important events by voice and vibration.
+- **Personal bests:** FullLock saves your best valid lap per track, per session type, dry and wet (full wet tyres), in `%APPDATA%\FullLock\pbs.json`. The phone's timing view shows your Time Trial dry and wet bests for the current track. Needs F1 2021 telemetry and the matching phone app.
 
 ## Requirements
 
