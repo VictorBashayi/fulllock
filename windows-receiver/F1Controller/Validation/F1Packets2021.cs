@@ -7,9 +7,9 @@ namespace F1Controller.Validation;
 /// </summary>
 public static class F1Packets2021
 {
-    public readonly record struct SessionInfo(byte Weather, byte TotalLaps, byte SessionType, byte SafetyCar, int? RainInMinutes);
+    public readonly record struct SessionInfo(byte Weather, byte TotalLaps, byte SessionType, byte SafetyCar, int? RainInMinutes, sbyte TrackId = -1);
 
-    // Session body: weather @0, totalLaps @3, sessionType @6, numMarshalZones @18,
+    // Session body: weather @0, totalLaps @3, sessionType @6, trackId @7 (i8, -1 unknown), numMarshalZones @18,
     // marshalZones[21x5] @19, safetyCarStatus @124, numWeatherForecastSamples @126,
     // samples[56x8] @127, each { sessionType u8 @0, timeOffset u8 (min) @1, weather u8 @2, ... }
     public static SessionInfo? ParseSession(ReadOnlySpan<byte> body)
@@ -26,7 +26,7 @@ public static class F1Packets2021
             int offset = body[o + 1];
             if (rain is null || offset < rain) rain = offset;
         }
-        return new SessionInfo(body[0], body[3], sessionType, body[124], rain);
+        return new SessionInfo(body[0], body[3], sessionType, body[124], rain, unchecked((sbyte)body[7]));
     }
 
     // Event body: code[4] ASCII @0. PENA: penaltyType @4, infringementType @5, vehicleIdx @6,

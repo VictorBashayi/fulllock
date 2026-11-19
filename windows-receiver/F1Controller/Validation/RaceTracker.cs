@@ -30,6 +30,7 @@ public sealed class RaceTracker
         public byte Sector;
         public byte LapNum;
         public bool LapInvalid;
+        public byte DriverStatus;   // previous packet's: 0 garage, 1 flying, 2 in-lap, 3 out-lap, 4 on track
         public ushort S1, S2;
 
         // Ring buffer of (session time, total distance) for gap calculation
@@ -82,6 +83,13 @@ public sealed class RaceTracker
         for (int i = 0; i < MaxCars; i++) _cars[i] = new Car();
     }
 
+    /// <summary>
+    /// Raised with the final time (ms) when the player completes a clean valid lap: a plain
+    /// lap-number step of one, valid, started from a flying or on-track state (so out-laps and
+    /// lap-number jumps never count). Raised after the tracker's state is updated.
+    /// </summary>
+    public event Action<uint>? OnPlayerLapCompleted;
+
     /// <summary>Latest timing for the player car.</summary>
     public RaceInfo Info { get; private set; }
 
@@ -124,6 +132,7 @@ public sealed class RaceTracker
         if (data.Length < headerSize + MaxCars * LapDataEntrySize) return;
 
         var info = Info;
+        uint? completedLap = null;
         for (int idx = 0; idx < MaxCars; idx++)
         {
             var e = data.Slice(headerSize + idx * LapDataEntrySize, LapDataEntrySize);
@@ -187,6 +196,8 @@ public sealed class RaceTracker
                 }
                 if (isPlayer)
                 {
+                    if (lastLap > 0 && !car.LapInvalid && lapNum == car.LapNum + 1 && car.DriverStatus is 1 or 4)
+                        completedLap = lastLap;
                     if (lastLap > 0 && !car.LapInvalid && (_myBestLap == 0 || lastLap < _myBestLap))
                     {
                         _myBestLap = lastLap;
@@ -199,6 +210,7 @@ public sealed class RaceTracker
                 car.S1 = car.S2 = 0;
             }
             car.LapInvalid = invalid;
+            car.DriverStatus = e[35];
 
             if (timeAdvanced) car.Add(sessionTime, totalDist);
 
@@ -247,6 +259,7 @@ public sealed class RaceTracker
             CarBehindInPit = behindIdx >= 0 && _pitStatus[behindIdx] != 0,
         };
         Info = info;
+        if (completedLap is { } lap) OnPlayerLapCompleted?.Invoke(lap);
     }
 
     private int? Gap(int playerIdx, byte position, bool ahead)

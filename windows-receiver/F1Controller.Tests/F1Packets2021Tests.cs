@@ -18,7 +18,7 @@ public class F1Packets2021Tests
     {
         var body = new byte[632];
         body[0] = 2; body[3] = 28; body[6] = 10; body[124] = 1;
-        Assert.Equal(new F1Packets2021.SessionInfo(2, 28, 10, 1, null), F1Packets2021.ParseSession(body));
+        Assert.Equal(new F1Packets2021.SessionInfo(2, 28, 10, 1, null, TrackId: 0), F1Packets2021.ParseSession(body));
     }
 
     [Fact]
@@ -89,5 +89,15 @@ public class F1Packets2021Tests
         var e = new byte[47];
         e[28] = 0xFF;
         Assert.Equal(-1, F1Packets2021.FiaFlag(e));
+    }
+
+    [Fact]
+    public void ParseSessionReadsTrackId()
+    {
+        var body = new byte[632];
+        body[6] = 12; body[7] = 5;
+        Assert.Equal(5, F1Packets2021.ParseSession(body)!.Value.TrackId);
+        body[7] = 0xFF;
+        Assert.Equal(-1, F1Packets2021.ParseSession(body)!.Value.TrackId);
     }
 }

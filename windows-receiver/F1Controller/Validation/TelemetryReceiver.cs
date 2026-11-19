@@ -120,9 +120,13 @@ public sealed class TelemetryReceiver : IDisposable
     /// <summary>Fires at most every 100 ms while lap data arrives.</summary>
     public event Action<RaceState>? OnRaceStateChanged;
 
-    public TelemetryReceiver(int port = 20777)
+    private readonly PbStore? _pbs;
+
+    public TelemetryReceiver(int port = 20777, PbStore? pbs = null)
     {
         _port = port;
+        _pbs = pbs;
+        _race.OnPlayerLapCompleted += OnLapCompleted;
     }
 
     public async Task RunAsync(CancellationToken ct)
@@ -302,9 +306,25 @@ public sealed class TelemetryReceiver : IDisposable
         }
     }
 
-    private RaceState CurrentRaceState() => new(
-        _race.Info, _totalLaps, _tyreCompound, _tyreAgeLaps, _fuelLaps,
-        (byte[])_tyreWear.Clone(), (byte[])_tyreTemp.Clone(), (byte[])_tyreInnerTemp.Clone());
+    private const byte SessionTypeTimeTrial = 12;   // F1 2021
+    private const byte CompoundFullWet = 8;          // visual compound
+
+    private void OnLapCompleted(uint lapMs)
+    {
+        if (_session is { TrackId: >= 0 } s)
+            _pbs?.TryRecord(s.TrackId, s.SessionType, _tyreCompound == CompoundFullWet, lapMs);
+    }
+
+    private RaceState CurrentRaceState()
+    {
+        sbyte track = _session?.TrackId ?? -1;
+        return new(
+            _race.Info, _totalLaps, _tyreCompound, _tyreAgeLaps, _fuelLaps,
+            (byte[])_tyreWear.Clone(), (byte[])_tyreTemp.Clone(), (byte[])_tyreInnerTemp.Clone(),
+            track,
+            track >= 0 && _pbs != null ? _pbs.Get(track, SessionTypeTimeTrial, false) : 0,
+            track >= 0 && _pbs != null ? _pbs.Get(track, SessionTypeTimeTrial, true) : 0);
+    }
 
     private static bool TryParseHeader(ReadOnlySpan<byte> data, out int packetFormat,
         out byte packetId, out int headerSize, out byte playerCarIndex)
@@ -351,7 +371,10 @@ public sealed record RaceState(
     float FuelLaps,
     byte[] TyreWear,
     byte[] TyreTemp,
-    byte[] TyreInnerTemp);
+    byte[] TyreInnerTemp,
+    sbyte TrackId = -1,
+    uint TtDryMs = 0,
+    uint TtWetMs = 0);
 
 /// <summary>Player car values shown on the phone. ErsMode: 0 none, 1 medium, 2 hotlap, 3 overtake.</summary>
 public readonly record struct GameState(
