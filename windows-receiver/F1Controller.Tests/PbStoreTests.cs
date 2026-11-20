@@ -76,4 +76,43 @@ public class PbStoreTests : IDisposable
         Assert.True(store.TryRecord(5, 12, false, 80000));
         Assert.Equal(80000u, store.Get(5, 12, false));
     }
+
+    [Fact]
+    public void SectorsAreStoredAndSurviveRestart()
+    {
+        new PbStore(PathIn).TryRecord(5, 13, false, 80000, 25000, 30000);
+        var list = new PbStore(PathIn).List(13);
+        Assert.Equal(new PbStore.PbLap(80000, 25000, 30000), Assert.Single(list).Dry);
+    }
+
+    [Fact]
+    public void OldFormatLoadsWithoutSectors()
+    {
+        File.WriteAllText(PathIn, "{\"3/13/dry\":{\"Ms\":86839,\"Date\":\"2026-11-20\"},\"3/13/wet\":{\"Ms\":116657,\"Date\":\"2026-11-20\"}}");
+        var list = new PbStore(PathIn).List(13);
+        Assert.Equal(new PbStore.TrackPbs(3, new PbStore.PbLap(86839, 0, 0), new PbStore.PbLap(116657, 0, 0)), Assert.Single(list));
+    }
+
+    [Fact]
+    public void ListIsPerSessionTypeAndOrderedByTrack()
+    {
+        var store = new PbStore(PathIn);
+        store.TryRecord(7, 13, false, 90000);
+        store.TryRecord(3, 13, true, 99000);
+        store.TryRecord(5, 10, false, 80000);
+        Assert.Equal(new sbyte[] { 3, 7 }, store.List(13).Select(t => t.TrackId).ToArray());
+        Assert.Equal(new PbStore.PbLap(99000, 0, 0), store.List(13)[0].Wet);
+        Assert.Equal(default, store.List(13)[0].Dry);
+    }
+
+    [Fact]
+    public void ChangedFiresOnlyOnNewPb()
+    {
+        var store = new PbStore(PathIn);
+        int changes = 0;
+        store.Changed += () => changes++;
+        store.TryRecord(5, 13, false, 80000);
+        store.TryRecord(5, 13, false, 81000);
+        Assert.Equal(1, changes);
+    }
 }
