@@ -80,19 +80,20 @@ public class TelemetryReceiverTests
     {
         var pbs = new PbStore(TempPb());
         using var rx = new TelemetryReceiver(0, pbs);
-        rx.HandleSafely(SessionPacket(12, 5));
+        rx.HandleSafely(SessionPacket(13, 5));
         rx.HandleSafely(StatusPacket(8));                       // full wets
         rx.HandleSafely(LapPacket(1, 0, 50f));
         DriveSectors(rx, 1, 50f);
         rx.HandleSafely(LapPacket(2, 95000, 150f));
-        Assert.Equal(95000u, pbs.Get(5, 12, wet: true));
-        Assert.Equal(0u, pbs.Get(5, 12, wet: false));
+        Assert.Equal(95000u, pbs.Get(5, 13, wet: true));
+        Assert.Equal(0u, pbs.Get(5, 13, wet: false));
+        Assert.Equal(new PbStore.PbLap(95000, 25000, 30000), pbs.List(13)[0].Wet);
 
         rx.HandleSafely(StatusPacket(16));                      // softs
         DriveSectors(rx, 2, 150f);
         rx.HandleSafely(LapPacket(3, 80000, 240f));
-        Assert.Equal(80000u, pbs.Get(5, 12, wet: false));
-        Assert.Equal(95000u, pbs.Get(5, 12, wet: true));
+        Assert.Equal(80000u, pbs.Get(5, 13, wet: false));
+        Assert.Equal(95000u, pbs.Get(5, 13, wet: true));
     }
 
     [Fact]
@@ -103,15 +104,15 @@ public class TelemetryReceiverTests
         rx.HandleSafely(LapPacket(1, 0, 50f));
         DriveSectors(rx, 1, 50f);
         rx.HandleSafely(LapPacket(2, 95000, 150f));
-        Assert.Equal(0u, pbs.Get(0, 12, false));
+        Assert.Equal(0u, pbs.Get(0, 13, false));
     }
 
     [Fact]
     public void RaceStateCarriesTrackAndTimeTrialPbs()
     {
         var pbs = new PbStore(TempPb());
-        pbs.TryRecord(5, 12, false, 78123);
-        pbs.TryRecord(5, 12, true, 91234);
+        pbs.TryRecord(5, 13, false, 78123);
+        pbs.TryRecord(5, 13, true, 91234);
         using var rx = new TelemetryReceiver(0, pbs);
         RaceState? last = null;
         rx.OnRaceStateChanged += s => last = s;

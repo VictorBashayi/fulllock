@@ -306,13 +306,12 @@ public sealed class TelemetryReceiver : IDisposable
         }
     }
 
-    private const byte SessionTypeTimeTrial = 12;   // F1 2021
     private const byte CompoundFullWet = 8;          // visual compound
 
-    private void OnLapCompleted(uint lapMs)
+    private void OnLapCompleted(uint lapMs, ushort s1, ushort s2)
     {
         if (_session is { TrackId: >= 0 } s)
-            _pbs?.TryRecord(s.TrackId, s.SessionType, _tyreCompound == CompoundFullWet, lapMs);
+            _pbs?.TryRecord(s.TrackId, s.SessionType, _tyreCompound == CompoundFullWet, lapMs, s1, s2);
     }
 
     private RaceState CurrentRaceState()
@@ -322,8 +321,8 @@ public sealed class TelemetryReceiver : IDisposable
             _race.Info, _totalLaps, _tyreCompound, _tyreAgeLaps, _fuelLaps,
             (byte[])_tyreWear.Clone(), (byte[])_tyreTemp.Clone(), (byte[])_tyreInnerTemp.Clone(),
             track,
-            track >= 0 && _pbs != null ? _pbs.Get(track, SessionTypeTimeTrial, false) : 0,
-            track >= 0 && _pbs != null ? _pbs.Get(track, SessionTypeTimeTrial, true) : 0);
+            track >= 0 && _pbs != null ? _pbs.Get(track, PbStore.TimeTrialSession, false) : 0,
+            track >= 0 && _pbs != null ? _pbs.Get(track, PbStore.TimeTrialSession, true) : 0);
     }
 
     private static bool TryParseHeader(ReadOnlySpan<byte> data, out int packetFormat,

@@ -85,7 +85,7 @@ public class RaceTrackerTests
     private static List<uint> Laps(RaceTracker t)
     {
         var laps = new List<uint>();
-        t.OnPlayerLapCompleted += ms => laps.Add(ms);
+        t.OnPlayerLapCompleted += (ms, _, _) => laps.Add(ms);
         return laps;
     }
 
@@ -161,12 +161,24 @@ public class RaceTrackerTests
     {
         var tracker = new RaceTracker();
         int calls = 0;
-        tracker.OnPlayerLapCompleted += _ => { calls++; throw new InvalidOperationException("boom"); };
+        tracker.OnPlayerLapCompleted += (_, _, _) => { calls++; throw new InvalidOperationException("boom"); };
         tracker.Process(PlayerLap(2, 0), Header, 0, 50f);
         float t = Sectors(tracker, 2, 50f);
         Assert.Throws<InvalidOperationException>(() => tracker.Process(PlayerLap(3, 80000), Header, 0, t + 20));
         Assert.Equal(3, tracker.Info.CurrentLap);
         tracker.Process(PlayerLap(3, 80000), Header, 0, t + 21);
         Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public void LapCompleteCarriesSectorTimes()
+    {
+        var tracker = new RaceTracker();
+        (uint, ushort, ushort)? got = null;
+        tracker.OnPlayerLapCompleted += (ms, s1, s2) => got = (ms, s1, s2);
+        tracker.Process(PlayerLap(2, 0), Header, 0, 50f);
+        float t = Sectors(tracker, 2, 50f);
+        tracker.Process(PlayerLap(3, 80000), Header, 0, t + 20);
+        Assert.Equal(((uint)80000, (ushort)25000, (ushort)30000), got);
     }
 }

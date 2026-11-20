@@ -84,11 +84,11 @@ public sealed class RaceTracker
     }
 
     /// <summary>
-    /// Raised with the final time (ms) when the player completes a clean valid lap: a plain
+    /// Raised with the final time and the S1 / S2 sector times (ms) when the player completes a clean valid lap: a plain
     /// lap-number step of one, valid, started from a flying or on-track state (so out-laps and
     /// lap-number jumps never count). Raised after the tracker's state is updated.
     /// </summary>
-    public event Action<uint>? OnPlayerLapCompleted;
+    public event Action<uint, ushort, ushort>? OnPlayerLapCompleted;
 
     /// <summary>Latest timing for the player car.</summary>
     public RaceInfo Info { get; private set; }
@@ -132,7 +132,7 @@ public sealed class RaceTracker
         if (data.Length < headerSize + MaxCars * LapDataEntrySize) return;
 
         var info = Info;
-        uint? completedLap = null;
+        (uint Ms, ushort S1, ushort S2)? completedLap = null;
         for (int idx = 0; idx < MaxCars; idx++)
         {
             var e = data.Slice(headerSize + idx * LapDataEntrySize, LapDataEntrySize);
@@ -198,7 +198,7 @@ public sealed class RaceTracker
                 {
                     if (lastLap > 0 && !car.LapInvalid && lapNum == car.LapNum + 1 && car.DriverStatus is 1 or 4
                         && car.S1 > 0 && car.S2 > 0) // both sector times seen: the whole lap was driven
-                        completedLap = lastLap;
+                        completedLap = (lastLap, car.S1, car.S2);
                     if (lastLap > 0 && !car.LapInvalid && (_myBestLap == 0 || lastLap < _myBestLap))
                     {
                         _myBestLap = lastLap;
@@ -260,7 +260,7 @@ public sealed class RaceTracker
             CarBehindInPit = behindIdx >= 0 && _pitStatus[behindIdx] != 0,
         };
         Info = info;
-        if (completedLap is { } lap) OnPlayerLapCompleted?.Invoke(lap);
+        if (completedLap is { } lap) OnPlayerLapCompleted?.Invoke(lap.Ms, lap.S1, lap.S2);
     }
 
     private int? Gap(int playerIdx, byte position, bool ahead)
