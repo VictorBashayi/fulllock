@@ -13,6 +13,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.rememberScrollState
@@ -77,21 +78,32 @@ internal fun PbView(currentTrack: Int, pbs: List<TrackPb>) {
                 PbLapRow("DRY", current.dryMs, current.dryS1, current.dryS2)
                 PbLapRow("WET", current.wetMs, current.wetS1, current.wetS2)
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.PanelBorder))
+            } else if (currentTrack >= 0) {
+                Label("${TrackNames.short(currentTrack).uppercase()} · NO PB YET")
             }
+            if (pbs.any { it.trackId != currentTrack })
+                PbListRow("", "DRY", "WET", Palette.TextDim)
             Column(
                 Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 for (t in pbs) if (t.trackId != currentTrack) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(TrackNames.short(t.trackId), fontFamily = Mono, fontSize = 11.sp,
-                            color = Palette.Text, maxLines = 1, modifier = Modifier.weight(1f))
-                        Text("${formatLap(t.dryMs)}  ${formatLap(t.wetMs)}", fontFamily = Mono, fontSize = 11.sp,
-                            color = Palette.TextDim, maxLines = 1)
-                    }
+                    PbListRow(TrackNames.short(t.trackId), formatLap(t.dryMs), formatLap(t.wetMs), Palette.Text)
                 }
             }
         }
+    }
+}
+
+/** Track name, then dry and wet times in fixed-width right-aligned columns (header uses the same). */
+@Composable
+private fun PbListRow(name: String, dry: String, wet: String, color: Color) {
+    Row(Modifier.fillMaxWidth()) {
+        Text(name, fontFamily = Mono, fontSize = 11.sp, color = color, maxLines = 1, modifier = Modifier.weight(1f))
+        Text(dry, fontFamily = Mono, fontSize = 11.sp, color = color, maxLines = 1,
+            textAlign = TextAlign.End, modifier = Modifier.width(60.dp))
+        Text(wet, fontFamily = Mono, fontSize = 11.sp, color = color, maxLines = 1,
+            textAlign = TextAlign.End, modifier = Modifier.width(60.dp))
     }
 }
 

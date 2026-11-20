@@ -120,7 +120,7 @@ fun ControllerScreen(
     val game by transport.telemetry.collectAsState()
     val race by transport.race.collectAsState()
     val pbs by transport.pbs.collectAsState()
-    // Centre panel: 0 wheel, 1 car, 2 timing — tap to cycle
+    // Centre panel: 0 wheel, 1 personal bests, 2 timing — tap to cycle
     var centerPage by remember { mutableIntStateOf(0) }
 
     var throttleVal by remember { mutableFloatStateOf(0f) }
