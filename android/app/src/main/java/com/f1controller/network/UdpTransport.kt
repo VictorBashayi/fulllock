@@ -109,6 +109,10 @@ class UdpTransport {
 
     private val _race = MutableStateFlow<RaceState?>(null)
     val race: StateFlow<RaceState?> = _race
+
+    /** Time Trial PBs per track from the receiver (resent every 2 s). */
+    private val _pbs = MutableStateFlow<List<TrackPb>>(emptyList())
+    val pbs: StateFlow<List<TrackPb>> = _pbs
     @Volatile private var lastRaceNs = 0L
 
     private val _radio = MutableSharedFlow<RadioCall>(extraBufferCapacity = 8)
@@ -355,7 +359,7 @@ class UdpTransport {
 
     // Listen for pongs and game state; only what the verifier accepts gets past the check
     private fun receiveLoop(s: Session) {
-        val recvBuf = ByteArray(256)
+        val recvBuf = ByteArray(1024)  // PB list: up to 50 tracks × 17 bytes + auth trailer
         val recvPacket = DatagramPacket(recvBuf, recvBuf.size)
 
         while (isCurrent(s)) {
@@ -379,6 +383,7 @@ class UdpTransport {
                         RADIO_MARKER -> decodeRadioCall(bb)?.let(::onRadioCall)
                         GAME_STATE_MARKER -> if (n >= 16) onGameState(bb)
                         RACE_STATE_MARKER -> if (n >= RACE_STATE_SIZE) onRaceState(bb, n)
+                        PB_LIST_MARKER -> decodePbList(bb)?.let { _pbs.value = it }
                     }
                 }
             } catch (_: java.net.SocketTimeoutException) {
@@ -483,6 +488,7 @@ class UdpTransport {
         private const val PING_MARKER = 0xFFFFFFFF.toInt()
         private const val GAME_STATE_MARKER = 0xFFFFFFFE.toInt()
         private const val RACE_STATE_MARKER = 0xFFFFFFFD.toInt()
+        private const val PB_LIST_MARKER = 0xFFFFFFFB.toInt()
         private const val RADIO_MARKER = 0xFFFFFFFC.toInt()
         private const val RACE_STATE_SIZE = 54
         private const val CONTROL_SIZE = 18
