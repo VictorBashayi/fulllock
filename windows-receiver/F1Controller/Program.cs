@@ -148,11 +148,12 @@ class Program
 
         CorrelationLogger? correlation = null;
         TelemetryReceiver? telemetry = null;
+        var pbStore = new PbStore(AppPaths.Default.PbFile);
 
         if (validate)
             correlation = new CorrelationLogger();
         if (validate || !noTelemetry)
-            telemetry = new TelemetryReceiver(20777, new PbStore(AppPaths.Default.PbFile));
+            telemetry = new TelemetryReceiver(20777, pbStore);
 
         var disposables = new List<IDisposable>();
 
@@ -186,6 +187,12 @@ class Program
                 ControlPacket.WriteRaceState(raceBuf, race);
                 receiver.SendToPhone(raceBuf);
             };
+
+            // Time Trial PB list for the phone's PB page: right after a new PB, and every 2 s
+            // because UDP can drop one. SendToPhone does nothing while no phone is connected.
+            void SendPbs() => receiver.SendToPhone(ControlPacket.WritePbList(pbStore.List(PbStore.TimeTrialSession)));
+            pbStore.Changed += SendPbs;
+            disposables.Add(new Timer(_ => SendPbs(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)));
         }
 
         // Wire packet reception to ViGEm submission

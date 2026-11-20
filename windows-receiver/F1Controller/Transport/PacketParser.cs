@@ -95,6 +95,36 @@ public readonly record struct ControlPacket(
     }
 
     /// <summary>
+    /// Time Trial personal bests for the phone's PB page (little-endian): [marker:u32][count:u8]
+    /// then per track [trackId:i8][dryMs:u32][dryS1:u16][dryS2:u16][wetMs:u32][wetS1:u16][wetS2:u16]
+    /// (17 bytes, 0 = none). At most 50 tracks so it fits the phone's 1024-byte buffer.
+    /// </summary>
+    public const uint PbListMarker = 0xFFFFFFFB;
+    public const int PbListMaxTracks = 50;
+    private const int PbListEntrySize = 17;
+
+    public static byte[] WritePbList(IReadOnlyList<Validation.PbStore.TrackPbs> list)
+    {
+        int count = Math.Min(list.Count, PbListMaxTracks);
+        var buf = new byte[5 + count * PbListEntrySize];
+        BinaryPrimitives.WriteUInt32LittleEndian(buf, PbListMarker);
+        buf[4] = (byte)count;
+        for (int i = 0; i < count; i++)
+        {
+            var t = list[i];
+            var e = buf.AsSpan(5 + i * PbListEntrySize);
+            e[0] = unchecked((byte)t.TrackId);
+            BinaryPrimitives.WriteUInt32LittleEndian(e[1..], t.Dry.Ms);
+            BinaryPrimitives.WriteUInt16LittleEndian(e[5..], t.Dry.S1);
+            BinaryPrimitives.WriteUInt16LittleEndian(e[7..], t.Dry.S2);
+            BinaryPrimitives.WriteUInt32LittleEndian(e[9..], t.Wet.Ms);
+            BinaryPrimitives.WriteUInt16LittleEndian(e[13..], t.Wet.S1);
+            BinaryPrimitives.WriteUInt16LittleEndian(e[15..], t.Wet.S2);
+        }
+        return buf;
+    }
+
+    /// <summary>
     /// Race engineer radio call sent to the phone (9-byte header + text, little-endian):
     /// [marker:u32][callId:u16][priority:u8][category:u8][textLen:u8][UTF-8 text, max 120 bytes]
     /// Text longer than 120 bytes is truncated on a UTF-8 character boundary.
