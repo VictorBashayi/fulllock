@@ -119,6 +119,7 @@ fun ControllerScreen(
     // Null until the receiver forwards game telemetry (game running with UDP telemetry on)
     val game by transport.telemetry.collectAsState()
     val race by transport.race.collectAsState()
+    val pbs by transport.pbs.collectAsState()
     // Centre panel: 0 wheel, 1 car, 2 timing — tap to cycle
     var centerPage by remember { mutableIntStateOf(0) }
 
@@ -237,7 +238,7 @@ fun ControllerScreen(
                             gearText = game?.let { gearName(it.gear) } ?: "–",
                             modifier = Modifier.fillMaxSize()
                         )
-                        1 -> CarView(race, game)
+                        1 -> PbView(race?.trackId ?: -1, pbs)
                         else -> TimingView(race)
                     }
                     // Engineer calls sit on top of the centre view; it's the biggest free space

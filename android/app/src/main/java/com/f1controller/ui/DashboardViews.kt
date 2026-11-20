@@ -15,18 +15,20 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.f1controller.network.TrackNames
+import com.f1controller.network.TrackPb
 import com.f1controller.network.UdpTransport
 import kotlin.math.abs
 
 /*
  * Race dashboard pieces shown around and in place of the steering wheel:
- * the info strip under BACK/START, and the Car and Timing centre views.
+ * the info strip under BACK/START, and the PB and Timing centre views.
  * They only read UdpTransport.RaceState (sent by the receiver for F1 2021).
  */
 
 private val Purple = Color(0xFFA855F7)
-private val Cold = Color(0xFF5B9BF0)
 private val Mono = FontFamily.Monospace
 
 /** "P4 · LAP 12/28 · Δ +0.214" */
@@ -58,67 +60,50 @@ private fun StripText(text: String, color: Color = Palette.Text) {
     Text(text, fontFamily = Mono, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = color, maxLines = 1)
 }
 
-/** Tyre temperature/wear per corner, compound and age, fuel margin, ERS. */
+/** Time Trial PBs: the current track with sector splits on top, every other track below. */
 @Composable
-internal fun CarView(race: UdpTransport.RaceState?, game: UdpTransport.GameTelemetry?) {
-    if (race == null) return Waiting()
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Card {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                    Tyre(race.tyreTemp[0], race.tyreWear[0], tyreOnRight = true)
-                    Tyre(race.tyreTemp[1], race.tyreWear[1], tyreOnRight = false)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                    Tyre(race.tyreTemp[2], race.tyreWear[2], tyreOnRight = true)
-                    Tyre(race.tyreTemp[3], race.tyreWear[3], tyreOnRight = false)
-                }
+internal fun PbView(currentTrack: Int, pbs: List<TrackPb>) {
+    Card(Modifier.width(240.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Label("PERSONAL BESTS · TIME TRIAL")
+            if (pbs.isEmpty()) {
+                Text("No Time Trial PBs yet", fontFamily = Condensed, fontSize = 13.sp, color = Palette.TextDim)
+                return@Column
             }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Bottom) {
-            val (letter, color) = compound(race.compound)
-            Stat("TYRE") {
-                Text(letter, fontFamily = Condensed, fontSize = 17.sp, color = color)
-                Text(" · ${race.tyreAgeLaps} laps", fontFamily = Condensed, fontSize = 17.sp, color = Palette.Text)
+            val current = pbs.firstOrNull { it.trackId == currentTrack }
+            if (current != null) {
+                Text(TrackNames.short(current.trackId).uppercase(), fontFamily = Condensed, fontSize = 15.sp,
+                    color = Palette.Cyan, maxLines = 1)
+                PbLapRow("DRY", current.dryMs, current.dryS1, current.dryS2)
+                PbLapRow("WET", current.wetMs, current.wetS1, current.wetS2)
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.PanelBorder))
             }
-            Stat("FUEL") {
-                val fuel = race.fuelLaps
-                Text("%+.1f laps".format(fuel), fontFamily = Condensed, fontSize = 17.sp,
-                    color = if (fuel < 0f) Palette.Red else Palette.Green)
-            }
-            game?.let { g ->
-                Stat("ERS") {
-                    Text("${g.ersPct}%", fontFamily = Condensed, fontSize = 17.sp, color = Palette.Yellow)
+            Column(
+                Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                for (t in pbs) if (t.trackId != currentTrack) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(TrackNames.short(t.trackId), fontFamily = Mono, fontSize = 11.sp,
+                            color = Palette.Text, maxLines = 1, modifier = Modifier.weight(1f))
+                        Text("${formatLap(t.dryMs)}  ${formatLap(t.wetMs)}", fontFamily = Mono, fontSize = 11.sp,
+                            color = Palette.TextDim, maxLines = 1)
+                    }
                 }
             }
         }
     }
 }
 
+/** "DRY 1:26.839" over "S1 28.1  S2 31.0  S3 27.7" (sectors "—" when not recorded). */
 @Composable
-private fun Tyre(tempC: Int, wearPct: Int, tyreOnRight: Boolean) {
-    val color = tempColor(tempC)
-    val readout = @Composable {
-        Column(horizontalAlignment = if (tyreOnRight) Alignment.End else Alignment.Start) {
-            Text("$tempC°", fontFamily = Mono, fontSize = 12.sp, color = color)
-            Text("$wearPct%", fontFamily = Mono, fontSize = 12.sp, color = Palette.Text)
-        }
-    }
-    val tyre = @Composable {
-        Box(
-            Modifier
-                .size(width = 22.dp, height = 34.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(color.copy(alpha = 0.15f))
-                .border(2.dp, color, RoundedCornerShape(6.dp))
-        )
-    }
-    // Readouts sit on the outside, tyres on the inside, like a car seen from above
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (tyreOnRight) { readout(); tyre() } else { tyre(); readout() }
+private fun PbLapRow(label: String, ms: Long, s1: Int, s2: Int) {
+    Column {
+        TimingRow(label, formatLap(ms))
+        val sectors = if (ms > 0 && s1 > 0 && s2 > 0)
+            "S1 %.1f  S2 %.1f  S3 %.1f".format(s1 / 1000f, s2 / 1000f, (ms - s1 - s2) / 1000f)
+        else "S1 —  S2 —  S3 —"
+        Text(sectors, fontFamily = Mono, fontSize = 10.sp, color = Palette.TextDim, maxLines = 1)
     }
 }
 
@@ -219,14 +204,6 @@ private fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit)
 }
 
 @Composable
-private fun Stat(label: String, value: @Composable RowScope.() -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Label(label)
-        Row(content = value)
-    }
-}
-
-@Composable
 private fun Label(text: String) {
     Text(text, fontFamily = Condensed, fontSize = 11.sp, letterSpacing = 2.sp, color = Palette.TextDim, maxLines = 1)
 }
@@ -253,21 +230,3 @@ private fun formatDelta(ms: Int) = (if (ms < 0) "−" else "+") + "%.3f".format(
 private fun formatGap(ms: Int) = "%.1f".format(ms / 1000f)
 
 private fun deltaColor(ms: Int) = if (ms <= 0) Palette.Green else Palette.Red
-
-/** Surface temperature bands, roughly where F1 2021 tyres work. */
-private fun tempColor(c: Int) = when {
-    c < 80 -> Cold
-    c <= 105 -> Palette.Green
-    c <= 115 -> Palette.Yellow
-    else -> Palette.Red
-}
-
-/** Visual compound → letter + colour. */
-private fun compound(visual: Int): Pair<String, Color> = when (visual) {
-    16 -> "S" to Palette.Red
-    17 -> "M" to Palette.Yellow
-    18 -> "H" to Palette.Text
-    7 -> "I" to Palette.Green
-    8 -> "W" to Cold
-    else -> "?" to Palette.TextDim
-}
