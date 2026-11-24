@@ -34,6 +34,8 @@ private val steps = listOf(
 @Composable
 fun Walkthrough(onDone: () -> Unit) {
     var i by remember { mutableIntStateOf(0) }
+    // The NavHost is gone while this shows, so Back would otherwise leave the app
+    androidx.activity.compose.BackHandler(onBack = onDone)
     val step = steps[i]
     Row(
         Modifier

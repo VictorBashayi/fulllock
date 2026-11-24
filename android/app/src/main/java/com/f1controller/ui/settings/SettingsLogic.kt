@@ -46,9 +46,13 @@ fun steeringPercent(angleDeg: Float, lockDeg: Float, curve: Float): Int {
     return (com.f1controller.input.SteeringProcessor.applyCurve(x, curve) * 100f).toInt()
 }
 
-/** First launch only: someone upgrading (already paired or with saved settings) never sees it. */
-fun shouldShowWalkthrough(seen: Boolean, isPaired: Boolean, hasSavedSettings: Boolean): Boolean =
-    !seen && !isPaired && !hasSavedSettings
+/**
+ * First launch only. [seen] is null when the pref was never written: then someone already paired or
+ * with saved settings is upgrading and skips it. Once first launch writes false, settings saved on
+ * pause can't turn a killed first run into an "upgrade".
+ */
+fun shouldShowWalkthrough(seen: Boolean?, isPaired: Boolean, hasSavedSettings: Boolean): Boolean =
+    seen?.not() ?: (!isPaired && !hasSavedSettings)
 
 /** The pairing sheet opens by itself once, and never on top of the walkthrough. */
 fun shouldAutoOpenPairing(

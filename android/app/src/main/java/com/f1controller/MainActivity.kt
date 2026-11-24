@@ -238,11 +238,11 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     private fun decideWalkthrough() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val seen = prefs.getBoolean(PREF_WALKTHROUGH_SEEN, false)
+        val seen = if (prefs.contains(PREF_WALKTHROUGH_SEEN)) prefs.getBoolean(PREF_WALKTHROUGH_SEEN, false) else null
         val hasSavedSettings = prefs.contains("lock_angle") || prefs.contains("auto_connect")
         walkthroughShowing = shouldShowWalkthrough(seen, pairingStore.isPaired, hasSavedSettings)
-        // Upgrades are marked seen now, so a later unpair never brings it back
-        if (!seen && !walkthroughShowing) prefs.edit().putBoolean(PREF_WALKTHROUGH_SEEN, true).apply()
+        // Decide once: upgrades are marked seen, a first run is marked unseen until Done/Skip
+        if (seen == null) prefs.edit().putBoolean(PREF_WALKTHROUGH_SEEN, !walkthroughShowing).apply()
     }
 
     private fun markWalkthroughSeen() {
@@ -481,7 +481,7 @@ fun F1ControllerApp(
     val radioCall by engineerRadio.current.collectAsState()
     // Hoisted above the NavHost so a trip to the IMU logger comes back to the same page
     var settingsPage by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
-    val paired = pairingUi.status != PairingStatus.NEEDS_PAIRING
+    val paired = transport.auth != null // the status says LOOKING, not NEEDS_PAIRING, while the PC is away
 
     NavHost(navController = navController, startDestination = ROUTE_CONTROLLER) {
         composable(ROUTE_CONTROLLER) {

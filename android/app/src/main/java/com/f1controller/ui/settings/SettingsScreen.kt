@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -32,7 +34,8 @@ fun SettingsScreen(
             .systemBarsPadding()
     ) {
         Column(
-            Modifier.width(190.dp).fillMaxHeight().background(Palette.BgEdge.copy(alpha = 0.55f)).padding(10.dp),
+            Modifier.width(190.dp).fillMaxHeight().background(Palette.BgEdge.copy(alpha = 0.55f))
+                .verticalScroll(rememberScrollState()).padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Text("Settings", fontFamily = Condensed, fontSize = 20.sp, color = Palette.Text,
@@ -51,7 +54,7 @@ private fun RailItem(page: SettingsPage, selected: Boolean, onClick: () -> Unit)
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 44.dp)
+            .heightIn(min = 48.dp)
             .then(if (selected) Modifier.background(Palette.Panel, shape).border(1.dp, Palette.PanelBorder, shape) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp),

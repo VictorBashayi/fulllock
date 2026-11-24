@@ -37,7 +37,10 @@ fun RowScope.AboutPage(versionName: String, onHowItWorks: () -> Unit) {
         SettingsRow("How it works", "Pair, hold, drive in three steps") { Chevron("How it works", onHowItWorks) }
         SettingsRow("Your data", "Inputs stay on your Wi-Fi, signed with your pairing key")
         SettingsRow("Source code", "github.com/VictorBashayi/fulllock") {
-            Chevron("Open source code") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL))) }
+            Chevron("Open source code") {
+                try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL))) }
+                catch (_: android.content.ActivityNotFoundException) {} // no browser: nothing to open
+            }
         }
         SettingsRow("Licence", "MIT, open source", divider = false)
     }

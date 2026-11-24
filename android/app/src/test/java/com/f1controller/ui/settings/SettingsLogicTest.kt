@@ -51,13 +51,19 @@ class SettingsLogicTest {
 
     @Test
     fun walkthroughFreshInstall() {
-        assertEquals(true, shouldShowWalkthrough(seen = false, isPaired = false, hasSavedSettings = false))
+        assertEquals(true, shouldShowWalkthrough(seen = null, isPaired = false, hasSavedSettings = false))
+    }
+
+    @Test
+    fun walkthroughResumesAfterKill() {
+        // First launch wrote seen=false; settings saved on pause must not turn it into an "upgrade"
+        assertEquals(true, shouldShowWalkthrough(seen = false, isPaired = false, hasSavedSettings = true))
     }
 
     @Test
     fun walkthroughOnUpgradeIsSkipped() {
-        assertEquals(false, shouldShowWalkthrough(seen = false, isPaired = true, hasSavedSettings = false))
-        assertEquals(false, shouldShowWalkthrough(seen = false, isPaired = false, hasSavedSettings = true))
+        assertEquals(false, shouldShowWalkthrough(seen = null, isPaired = true, hasSavedSettings = false))
+        assertEquals(false, shouldShowWalkthrough(seen = null, isPaired = false, hasSavedSettings = true))
     }
 
     @Test
