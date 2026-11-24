@@ -41,7 +41,8 @@ fun RowScope.LayoutPage(pedalSettings: PedalSettings) {
         }
         Text(
             if (pedalSettings.swapPedals) "Throttle left, brake right" else "Brake left, throttle right",
-            fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Palette.TextDim
+            fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Palette.TextDim,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
     }
 
