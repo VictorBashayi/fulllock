@@ -2,6 +2,8 @@ package com.f1controller.ui
 
 import com.f1controller.ui.theme.Condensed
 import com.f1controller.ui.theme.Palette
+import com.f1controller.ui.settings.Pedal
+import com.f1controller.ui.settings.pedalSlots
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Canvas
@@ -183,13 +185,16 @@ fun ControllerScreen(
             }
         }
 
-        // ---- Main row ----
-        Row(
-            modifier = Modifier.fillMaxWidth().weight(0.73f),
-            horizontalArrangement = Arrangement.spacedBy(gap),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            VerticalPedal(
+        // Swap sides mirrors only the pedals; each keeps its own colour, label and transport field
+        val slots = pedalSlots(pedalSettings.swapPedals)
+        LaunchedEffect(pedalSettings.swapPedals) {
+            // A pedal held across a swap would otherwise stay pressed
+            brakeVal = 0f; throttleVal = 0f
+            transport.brake = 0; transport.throttle = 0
+        }
+        @Composable
+        fun RowScope.PedalSlot(pedal: Pedal) = when (pedal) {
+            Pedal.BRAKE -> VerticalPedal(
                 label = "BRAKE",
                 value = brakeVal,
                 onValueChanged = {
@@ -200,6 +205,26 @@ fun ControllerScreen(
                 asButton = pedalSettings.brakeAsButton,
                 modifier = Modifier.weight(0.14f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
             )
+            Pedal.THROTTLE -> VerticalPedal(
+                label = "THROTTLE",
+                value = throttleVal,
+                onValueChanged = {
+                    throttleVal = it
+                    transport.throttle = (it * 255f).toInt()
+                },
+                color = Palette.Cyan,
+                asButton = pedalSettings.throttleAsButton,
+                modifier = Modifier.weight(0.14f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
+            )
+        }
+
+        // ---- Main row ----
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(0.73f),
+            horizontalArrangement = Arrangement.spacedBy(gap),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PedalSlot(slots.first)
             Box(Modifier.weight(0.23f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                 DPad(buttonMask, onButton)
             }
@@ -254,17 +279,7 @@ fun ControllerScreen(
             Box(Modifier.weight(0.23f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                 FaceButtons(buttonMask, onButton)
             }
-            VerticalPedal(
-                label = "THROTTLE",
-                value = throttleVal,
-                onValueChanged = {
-                    throttleVal = it
-                    transport.throttle = (it * 255f).toInt()
-                },
-                color = Palette.Cyan,
-                asButton = pedalSettings.throttleAsButton,
-                modifier = Modifier.weight(0.14f).fillMaxHeight(PEDAL_HEIGHT).align(Alignment.Bottom)
-            )
+            PedalSlot(slots.second)
         }
     }
 }

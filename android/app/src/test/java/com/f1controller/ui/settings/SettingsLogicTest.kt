@@ -22,6 +22,22 @@ class SettingsLogicTest {
     }
 
     @Test
+    fun pedalSlotsDefault() {
+        assertEquals(Pedal.BRAKE to Pedal.THROTTLE, pedalSlots(false))
+    }
+
+    @Test
+    fun pedalSlotsSwapped() {
+        assertEquals(Pedal.THROTTLE to Pedal.BRAKE, pedalSlots(true))
+    }
+
+    @Test
+    fun pedalModeLines() {
+        assertEquals("Slider: drag up for more pressure", pedalModeLine(false))
+        assertEquals("Button: press for full, let go for none", pedalModeLine(true))
+    }
+
+    @Test
     fun startPageDefaultPaired() {
         assertEquals(SettingsPage.STEERING, startPage(true, null))
     }

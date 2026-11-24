@@ -30,3 +30,12 @@ fun connectionSummary(paired: Boolean, connected: Boolean, rttMs: Float): String
     !connected -> "Looking for PC…"
     else -> "Connected · ${rttMs.toInt()} ms"
 }
+
+enum class Pedal { BRAKE, THROTTLE }
+
+/** Which pedal sits in the (left, right) slot of the driving screen. */
+fun pedalSlots(swap: Boolean): Pair<Pedal, Pedal> =
+    if (swap) Pedal.THROTTLE to Pedal.BRAKE else Pedal.BRAKE to Pedal.THROTTLE
+
+fun pedalModeLine(asButton: Boolean): String =
+    if (asButton) "Button: press for full, let go for none" else "Slider: drag up for more pressure"

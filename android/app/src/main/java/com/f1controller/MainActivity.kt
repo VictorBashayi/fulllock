@@ -59,6 +59,8 @@ import com.f1controller.ui.settings.SettingsPage
 import com.f1controller.ui.settings.startPage
 import com.f1controller.ui.settings.ConnectionPage
 import com.f1controller.ui.settings.AdvancedPage
+import com.f1controller.ui.settings.PedalsPage
+import com.f1controller.ui.settings.LayoutPage
 import androidx.compose.runtime.saveable.rememberSaveable
 
 /**
@@ -286,6 +288,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         steeringProcessor.curve = prefs.getFloat("curve", steeringProcessor.curve)
         pedalSettings.brakeAsButton = prefs.getBoolean("brake_as_button", pedalSettings.brakeAsButton)
         pedalSettings.throttleAsButton = prefs.getBoolean("throttle_as_button", pedalSettings.throttleAsButton)
+        pedalSettings.swapPedals = prefs.getBoolean("swap_pedals", pedalSettings.swapPedals)
         engineerSettings.level = prefs.getInt("engineer_level", engineerSettings.level)
         engineerSettings.voice = prefs.getBoolean("engineer_voice", engineerSettings.voice)
         engineerSettings.vibrate = prefs.getBoolean("engineer_vibrate", engineerSettings.vibrate)
@@ -321,6 +324,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             .putFloat("curve", steeringProcessor.curve)
             .putBoolean("brake_as_button", pedalSettings.brakeAsButton)
             .putBoolean("throttle_as_button", pedalSettings.throttleAsButton)
+            .putBoolean("swap_pedals", pedalSettings.swapPedals)
             .putInt("engineer_level", engineerSettings.level)
             .putBoolean("engineer_voice", engineerSettings.voice)
             .putBoolean("engineer_vibrate", engineerSettings.vibrate)
@@ -471,6 +475,8 @@ fun F1ControllerApp(
                         SettingsPage.ADVANCED -> AdvancedPage(transport, discovery, steeringProcessor) {
                             navController.navigate(ROUTE_LOGGER)
                         }
+                        SettingsPage.PEDALS -> PedalsPage(pedalSettings)
+                        SettingsPage.LAYOUT -> LayoutPage(pedalSettings)
                         // Pages not rebuilt yet show the old single-page settings
                         else -> SettingsScreen(
                             transport = transport,

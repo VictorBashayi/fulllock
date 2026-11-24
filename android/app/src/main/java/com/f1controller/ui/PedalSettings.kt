@@ -14,4 +14,6 @@ import androidx.compose.runtime.setValue
 class PedalSettings {
     var brakeAsButton by mutableStateOf(true)
     var throttleAsButton by mutableStateOf(true)
+    /** Throttle on the left, brake on the right. */
+    var swapPedals by mutableStateOf(false)
 }
