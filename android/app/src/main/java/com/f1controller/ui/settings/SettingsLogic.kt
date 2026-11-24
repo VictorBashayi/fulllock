@@ -45,3 +45,14 @@ fun steeringPercent(angleDeg: Float, lockDeg: Float, curve: Float): Int {
     val x = (kotlin.math.abs(angleDeg) / lockDeg).coerceIn(0f, 1f)
     return (com.f1controller.input.SteeringProcessor.applyCurve(x, curve) * 100f).toInt()
 }
+
+/** First launch only: someone upgrading (already paired or with saved settings) never sees it. */
+fun shouldShowWalkthrough(seen: Boolean, isPaired: Boolean, hasSavedSettings: Boolean): Boolean =
+    !seen && !isPaired && !hasSavedSettings
+
+/** The pairing sheet opens by itself once, and never on top of the walkthrough. */
+fun shouldAutoOpenPairing(
+    status: com.f1controller.network.PairingStatus,
+    alreadyOpened: Boolean,
+    walkthroughShowing: Boolean,
+): Boolean = status == com.f1controller.network.PairingStatus.NEEDS_PAIRING && !alreadyOpened && !walkthroughShowing

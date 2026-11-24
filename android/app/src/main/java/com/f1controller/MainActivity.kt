@@ -57,6 +57,9 @@ import com.f1controller.ui.*
 import com.f1controller.ui.theme.F1ControllerTheme
 import com.f1controller.ui.settings.SettingsPage
 import com.f1controller.ui.settings.startPage
+import com.f1controller.ui.settings.AboutPage
+import com.f1controller.ui.settings.shouldAutoOpenPairing
+import com.f1controller.ui.settings.shouldShowWalkthrough
 import com.f1controller.ui.settings.ConnectionPage
 import com.f1controller.ui.settings.AdvancedPage
 import com.f1controller.ui.settings.SettingsScreen
@@ -119,6 +122,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private var lastSwitchNs = 0L
     private var attemptUntilMs = 0L          // pairingAttempt stays true until this (3 s after a failed pair)
     private var sheetAutoOpened = false
+    private var walkthroughShowing by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -141,6 +145,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         loadSettings()
         pairingStore = PairingStore(this)
         transport.auth = pairingStore.key()?.let(::PacketAuth) // null on any keystore trouble = unpaired
+        decideWalkthrough()
         // Persist only the address a session actually got a valid pong from
         lifecycleScope.launch { transport.connectedServer.collect { it?.let(::saveServer) } }
         transport.engineerLevel = { engineerSettings.level }
@@ -169,6 +174,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     computePairingStatus = ::computePairingStatus,
                     onPairSubmit = ::submitPairing,
                     onForgetPc = ::forgetPc,
+                    walkthroughShowing = walkthroughShowing,
+                    onWalkthroughDone = ::markWalkthroughSeen,
+                    onShowWalkthrough = { walkthroughShowing = true },
+                    versionName = packageManager.getPackageInfo(packageName, 0).versionName ?: "",
                 )
             }
         }
@@ -225,6 +234,22 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         }
     }
 
+    // ---- First launch ----
+
+    private fun decideWalkthrough() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val seen = prefs.getBoolean(PREF_WALKTHROUGH_SEEN, false)
+        val hasSavedSettings = prefs.contains("lock_angle") || prefs.contains("auto_connect")
+        walkthroughShowing = shouldShowWalkthrough(seen, pairingStore.isPaired, hasSavedSettings)
+        // Upgrades are marked seen now, so a later unpair never brings it back
+        if (!seen && !walkthroughShowing) prefs.edit().putBoolean(PREF_WALKTHROUGH_SEEN, true).apply()
+    }
+
+    private fun markWalkthroughSeen() {
+        walkthroughShowing = false
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().putBoolean(PREF_WALKTHROUGH_SEEN, true).apply()
+    }
+
     // ---- Pairing ----
 
     private fun ageMs(ns: Long): Long? = if (ns == 0L) null else (System.nanoTime() - ns) / 1_000_000
@@ -234,7 +259,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         val attempt = pairingUi.busy || System.currentTimeMillis() < attemptUntilMs
         // During/after a failed attempt there is no stored key, but the mismatch rule needs one
         val s = pairingStatus(transport.auth != null || attempt, attempt, ageMs(lastBeaconNs), ageMs(transport.lastValidPongNs), ageMs(transport.connectStartNs))
-        if (s == PairingStatus.NEEDS_PAIRING && !sheetAutoOpened) { sheetAutoOpened = true; pairingUi.sheetOpen = true }
+        if (shouldAutoOpenPairing(s, sheetAutoOpened, walkthroughShowing)) { sheetAutoOpened = true; pairingUi.sheetOpen = true }
         return s
     }
 
@@ -398,6 +423,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     companion object {
         const val PREFS_NAME = "f1controller"
+        private const val PREF_WALKTHROUGH_SEEN = "walkthrough_seen"
         private const val SWITCH_COOLDOWN_NS = 3_000_000_000L
     }
 }
@@ -418,7 +444,16 @@ fun F1ControllerApp(
     computePairingStatus: () -> PairingStatus,
     onPairSubmit: (String) -> Unit,
     onForgetPc: () -> Unit,
+    walkthroughShowing: Boolean,
+    onWalkthroughDone: () -> Unit,
+    onShowWalkthrough: () -> Unit,
+    versionName: String,
 ) {
+    if (walkthroughShowing) {
+        // Drawn instead of the app; the pairing sheet waits for it (shouldAutoOpenPairing)
+        Walkthrough(onDone = onWalkthroughDone)
+        return
+    }
     LaunchedEffect(Unit) {
         while (true) { pairingUi.status = computePairingStatus(); delay(250) }
     }
@@ -482,7 +517,7 @@ fun F1ControllerApp(
                         SettingsPage.LAYOUT -> LayoutPage(pedalSettings)
                         SettingsPage.STEERING -> SteeringPage(steeringProcessor)
                         SettingsPage.ENGINEER -> EngineerPage(engineerSettings, engineerRadio)
-                        SettingsPage.ABOUT -> {} // Task 6
+                        SettingsPage.ABOUT -> AboutPage(versionName, onShowWalkthrough)
                     }
                 },
             )

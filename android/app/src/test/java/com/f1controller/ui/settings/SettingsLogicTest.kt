@@ -50,6 +50,35 @@ class SettingsLogicTest {
     }
 
     @Test
+    fun walkthroughFreshInstall() {
+        assertEquals(true, shouldShowWalkthrough(seen = false, isPaired = false, hasSavedSettings = false))
+    }
+
+    @Test
+    fun walkthroughOnUpgradeIsSkipped() {
+        assertEquals(false, shouldShowWalkthrough(seen = false, isPaired = true, hasSavedSettings = false))
+        assertEquals(false, shouldShowWalkthrough(seen = false, isPaired = false, hasSavedSettings = true))
+    }
+
+    @Test
+    fun walkthroughSeen() {
+        assertEquals(false, shouldShowWalkthrough(seen = true, isPaired = false, hasSavedSettings = false))
+    }
+
+    @Test
+    fun autoPairWaitsForWalkthrough() {
+        val np = com.f1controller.network.PairingStatus.NEEDS_PAIRING
+        assertEquals(false, shouldAutoOpenPairing(np, alreadyOpened = false, walkthroughShowing = true))
+        assertEquals(true, shouldAutoOpenPairing(np, alreadyOpened = false, walkthroughShowing = false))
+    }
+
+    @Test
+    fun autoPairOnlyOnce() {
+        val np = com.f1controller.network.PairingStatus.NEEDS_PAIRING
+        assertEquals(false, shouldAutoOpenPairing(np, alreadyOpened = true, walkthroughShowing = false))
+    }
+
+    @Test
     fun startPageDefaultPaired() {
         assertEquals(SettingsPage.STEERING, startPage(true, null))
     }
