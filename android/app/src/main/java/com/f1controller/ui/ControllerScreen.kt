@@ -1,5 +1,8 @@
 package com.f1controller.ui
 
+import com.f1controller.ui.theme.Condensed
+import com.f1controller.ui.theme.Palette
+
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -67,24 +70,6 @@ import kotlin.math.sin
  *   0x1000 = A             0x2000 = B
  *   0x4000 = X             0x8000 = Y
  */
-
-internal object Palette {
-    val BgCenter = Color(0xFF10232B)
-    val BgEdge = Color(0xFF090F14)
-    val Panel = Color(0xFF111B24)
-    val PanelBorder = Color(0xFF243441)
-    val Text = Color(0xFFE6EDF2)
-    val TextDim = Color(0xFF8A99A6)
-    val Cyan = Color(0xFF22D3EE)
-    val Red = Color(0xFFF26B6B)
-    val Green = Color(0xFF3DDC84)
-    val Yellow = Color(0xFFF2C94C)
-    val Blue = Color(0xFF5B7BF0)
-}
-
-internal val Condensed = FontFamily(
-    android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.BOLD)
-)
 
 private const val BTN_DPAD_UP = 0x0001
 private const val BTN_DPAD_DOWN = 0x0002

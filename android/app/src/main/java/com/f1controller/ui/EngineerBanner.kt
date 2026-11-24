@@ -1,5 +1,8 @@
 package com.f1controller.ui
 
+import com.f1controller.ui.theme.Condensed
+import com.f1controller.ui.theme.Palette
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
