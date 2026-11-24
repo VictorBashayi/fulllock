@@ -584,7 +584,7 @@ fun VerticalPedal(
  * (there's no telemetry coming back from the PC yet).
  */
 @Composable
-private fun SteeringWheel(
+internal fun SteeringWheel(
     angle: Float,
     lockAngleDeg: Float,
     revLevel: Float,

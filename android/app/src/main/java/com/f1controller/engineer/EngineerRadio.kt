@@ -39,6 +39,10 @@ class EngineerRadio(
     private val _current = MutableStateFlow<RadioCall?>(null)
     val current: StateFlow<RadioCall?> = _current
 
+    private val _lastCall = MutableStateFlow<RadioCall?>(null)
+    /** The most recent call, kept after the banner clears (Settings shows it). */
+    val lastCall: StateFlow<RadioCall?> = _lastCall
+
     private val _voiceAvailable = MutableStateFlow(false)
     val voiceAvailable: StateFlow<Boolean> = _voiceAvailable
 
@@ -112,6 +116,7 @@ class EngineerRadio(
 
         val token = ++shown
         _current.value = call
+        _lastCall.value = call
         minTimeUp = false
         speaking = when {
             !settings.voice -> false

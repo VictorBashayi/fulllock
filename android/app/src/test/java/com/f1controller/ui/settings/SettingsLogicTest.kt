@@ -38,6 +38,18 @@ class SettingsLogicTest {
     }
 
     @Test
+    fun steeringPercentLinearAndClamped() {
+        assertEquals(50, steeringPercent(angleDeg = -45f, lockDeg = 90f, curve = 0f))
+        assertEquals(100, steeringPercent(angleDeg = 200f, lockDeg = 90f, curve = 0f))
+    }
+
+    @Test
+    fun steeringPercentFollowsCurve() {
+        val expected = (com.f1controller.input.SteeringProcessor.applyCurve(0.25f, 0.5f) * 100f).toInt()
+        assertEquals(expected, steeringPercent(angleDeg = 22.5f, lockDeg = 90f, curve = 0.5f))
+    }
+
+    @Test
     fun startPageDefaultPaired() {
         assertEquals(SettingsPage.STEERING, startPage(true, null))
     }

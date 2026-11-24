@@ -39,3 +39,9 @@ fun pedalSlots(swap: Boolean): Pair<Pedal, Pedal> =
 
 fun pedalModeLine(asButton: Boolean): String =
     if (asButton) "Button: press for full, let go for none" else "Slider: drag up for more pressure"
+
+/** How much steering the game gets at [angleDeg] of phone turn, as the Steering preview shows it. */
+fun steeringPercent(angleDeg: Float, lockDeg: Float, curve: Float): Int {
+    val x = (kotlin.math.abs(angleDeg) / lockDeg).coerceIn(0f, 1f)
+    return (com.f1controller.input.SteeringProcessor.applyCurve(x, curve) * 100f).toInt()
+}

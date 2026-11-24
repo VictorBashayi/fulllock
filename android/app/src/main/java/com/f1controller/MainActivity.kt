@@ -59,6 +59,9 @@ import com.f1controller.ui.settings.SettingsPage
 import com.f1controller.ui.settings.startPage
 import com.f1controller.ui.settings.ConnectionPage
 import com.f1controller.ui.settings.AdvancedPage
+import com.f1controller.ui.settings.SettingsScreen
+import com.f1controller.ui.settings.SteeringPage
+import com.f1controller.ui.settings.EngineerPage
 import com.f1controller.ui.settings.PedalsPage
 import com.f1controller.ui.settings.LayoutPage
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -466,7 +469,7 @@ fun F1ControllerApp(
         }
         composable(ROUTE_SETTINGS) {
             val page = settingsPage ?: startPage(paired, null)
-            com.f1controller.ui.settings.SettingsScreen(
+            SettingsScreen(
                 page = page,
                 onPage = { settingsPage = it },
                 pageContent = { p ->
@@ -477,18 +480,9 @@ fun F1ControllerApp(
                         }
                         SettingsPage.PEDALS -> PedalsPage(pedalSettings)
                         SettingsPage.LAYOUT -> LayoutPage(pedalSettings)
-                        // Pages not rebuilt yet show the old single-page settings
-                        else -> SettingsScreen(
-                            transport = transport,
-                            steeringProcessor = steeringProcessor,
-                            pedalSettings = pedalSettings,
-                            engineerSettings = engineerSettings,
-                            engineerRadio = engineerRadio,
-                            discovery = discovery,
-                            pairingStatus = pairingUi.status,
-                            onRepair = openSheet,
-                            onForget = onForgetPc,
-                        )
+                        SettingsPage.STEERING -> SteeringPage(steeringProcessor)
+                        SettingsPage.ENGINEER -> EngineerPage(engineerSettings, engineerRadio)
+                        SettingsPage.ABOUT -> {} // Task 6
                     }
                 },
             )
