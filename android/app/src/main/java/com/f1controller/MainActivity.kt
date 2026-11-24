@@ -55,6 +55,9 @@ import com.f1controller.network.shouldSwitchServer
 import com.f1controller.sensor.SensorLogger
 import com.f1controller.ui.*
 import com.f1controller.ui.theme.F1ControllerTheme
+import com.f1controller.ui.settings.SettingsPage
+import com.f1controller.ui.settings.startPage
+import androidx.compose.runtime.saveable.rememberSaveable
 
 /**
  * Main entry point for F1 Phone Controller.
@@ -392,12 +395,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
 // ---- Navigation ----
 
-enum class NavTab(val route: String, val label: String, val icon: ImageVector) {
-    CONTROLLER("controller", "Controller", Icons.Default.SportsEsports),
-    LOGGER("logger", "IMU Logger", Icons.Default.DataUsage),
-    SETTINGS("settings", "Settings", Icons.Default.Settings),
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun F1ControllerApp(
@@ -438,70 +435,53 @@ fun F1ControllerApp(
     val openSheet = { pairingUi.error = null; pairingUi.sheetOpen = true }
     val navController = rememberNavController()
     val radioCall by engineerRadio.current.collectAsState()
-    val currentBackStack by navController.currentBackStackEntryAsState()
-    val currentRoute = currentBackStack?.destination?.route
+    // Hoisted above the NavHost so a trip to the IMU logger comes back to the same page
+    var settingsPage by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
+    val paired = pairingUi.status != PairingStatus.NEEDS_PAIRING
 
-    fun navigateTo(route: String) {
-        if (currentRoute != route) {
-            navController.navigate(route) {
-                popUpTo(navController.graph.startDestinationId) { saveState = true }
-                launchSingleTop = true
-                restoreState = true
-            }
+    NavHost(navController = navController, startDestination = ROUTE_CONTROLLER) {
+        composable(ROUTE_CONTROLLER) {
+            ControllerScreen(
+                transport = transport,
+                onSteeringAngleDisplay = { steeringProcessor.currentAngleDeg },
+                lockAngleDeg = { steeringProcessor.lockAngleDeg },
+                pedalSettings = pedalSettings,
+                radioCall = radioCall,
+                onOpenSettings = {
+                    settingsPage = startPage(paired, settingsPage)
+                    navController.navigate(ROUTE_SETTINGS) { launchSingleTop = true }
+                },
+                pairingStatus = pairingUi.status,
+                onRepair = openSheet,
+            )
         }
-    }
-
-    Scaffold(
-        bottomBar = {
-            // The controller screen is full-screen; it has its own settings button
-            if (currentRoute != NavTab.CONTROLLER.route) NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 0.dp
-            ) {
-                NavTab.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected = currentRoute == tab.route,
-                        onClick = { navigateTo(tab.route) },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label, fontSize = 11.sp) },
+        composable(ROUTE_LOGGER) {
+            LoggerScreen(sensorLogger = sensorLogger)
+        }
+        composable(ROUTE_SETTINGS) {
+            val page = settingsPage ?: startPage(paired, null)
+            com.f1controller.ui.settings.SettingsScreen(
+                page = page,
+                onPage = { settingsPage = it },
+                pageContent = { _ ->
+                    // Pages not rebuilt yet show the old single-page settings
+                    SettingsScreen(
+                        transport = transport,
+                        steeringProcessor = steeringProcessor,
+                        pedalSettings = pedalSettings,
+                        engineerSettings = engineerSettings,
+                        engineerRadio = engineerRadio,
+                        discovery = discovery,
+                        pairingStatus = pairingUi.status,
+                        onRepair = openSheet,
+                        onForget = onForgetPc,
                     )
-                }
-            }
-        }
-    ) { padding ->
-        NavHost(
-            navController = navController,
-            startDestination = NavTab.CONTROLLER.route,
-            modifier = Modifier.padding(padding)
-        ) {
-            composable(NavTab.CONTROLLER.route) {
-                ControllerScreen(
-                    transport = transport,
-                    onSteeringAngleDisplay = { steeringProcessor.currentAngleDeg },
-                    lockAngleDeg = { steeringProcessor.lockAngleDeg },
-                    pedalSettings = pedalSettings,
-                    radioCall = radioCall,
-                    onOpenSettings = { navigateTo(NavTab.SETTINGS.route) },
-                    pairingStatus = pairingUi.status,
-                    onRepair = openSheet,
-                )
-            }
-            composable(NavTab.LOGGER.route) {
-                LoggerScreen(sensorLogger = sensorLogger)
-            }
-            composable(NavTab.SETTINGS.route) {
-                SettingsScreen(
-                    transport = transport,
-                    steeringProcessor = steeringProcessor,
-                    pedalSettings = pedalSettings,
-                    engineerSettings = engineerSettings,
-                    engineerRadio = engineerRadio,
-                    discovery = discovery,
-                    pairingStatus = pairingUi.status,
-                    onRepair = openSheet,
-                    onForget = onForgetPc,
-                )
-            }
+                },
+            )
         }
     }
 }
+
+private const val ROUTE_CONTROLLER = "controller"
+private const val ROUTE_SETTINGS = "settings"
+private const val ROUTE_LOGGER = "logger"
