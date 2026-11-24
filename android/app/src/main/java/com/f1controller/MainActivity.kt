@@ -57,6 +57,8 @@ import com.f1controller.ui.*
 import com.f1controller.ui.theme.F1ControllerTheme
 import com.f1controller.ui.settings.SettingsPage
 import com.f1controller.ui.settings.startPage
+import com.f1controller.ui.settings.ConnectionPage
+import com.f1controller.ui.settings.AdvancedPage
 import androidx.compose.runtime.saveable.rememberSaveable
 
 /**
@@ -463,19 +465,25 @@ fun F1ControllerApp(
             com.f1controller.ui.settings.SettingsScreen(
                 page = page,
                 onPage = { settingsPage = it },
-                pageContent = { _ ->
-                    // Pages not rebuilt yet show the old single-page settings
-                    SettingsScreen(
-                        transport = transport,
-                        steeringProcessor = steeringProcessor,
-                        pedalSettings = pedalSettings,
-                        engineerSettings = engineerSettings,
-                        engineerRadio = engineerRadio,
-                        discovery = discovery,
-                        pairingStatus = pairingUi.status,
-                        onRepair = openSheet,
-                        onForget = onForgetPc,
-                    )
+                pageContent = { p ->
+                    when (p) {
+                        SettingsPage.CONNECTION -> ConnectionPage(transport, discovery, pairingUi.status, openSheet, onForgetPc)
+                        SettingsPage.ADVANCED -> AdvancedPage(transport, discovery, steeringProcessor) {
+                            navController.navigate(ROUTE_LOGGER)
+                        }
+                        // Pages not rebuilt yet show the old single-page settings
+                        else -> SettingsScreen(
+                            transport = transport,
+                            steeringProcessor = steeringProcessor,
+                            pedalSettings = pedalSettings,
+                            engineerSettings = engineerSettings,
+                            engineerRadio = engineerRadio,
+                            discovery = discovery,
+                            pairingStatus = pairingUi.status,
+                            onRepair = openSheet,
+                            onForget = onForgetPc,
+                        )
+                    }
                 },
             )
         }

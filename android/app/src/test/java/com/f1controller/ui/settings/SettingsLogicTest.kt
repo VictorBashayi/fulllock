@@ -15,6 +15,13 @@ class SettingsLogicTest {
     }
 
     @Test
+    fun connectionSummaryStates() {
+        assertEquals("Not paired", connectionSummary(paired = false, connected = false, rttMs = 0f))
+        assertEquals("Looking for PC…", connectionSummary(paired = true, connected = false, rttMs = 0f))
+        assertEquals("Connected · 3 ms", connectionSummary(paired = true, connected = true, rttMs = 3.4f))
+    }
+
+    @Test
     fun startPageDefaultPaired() {
         assertEquals(SettingsPage.STEERING, startPage(true, null))
     }

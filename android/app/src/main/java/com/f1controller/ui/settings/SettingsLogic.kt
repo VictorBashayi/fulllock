@@ -23,3 +23,10 @@ enum class SettingsPage(val label: String, val icon: ImageVector) {
 /** Unpaired users land on Connection; otherwise the page they last used this session, else Steering. */
 fun startPage(paired: Boolean, last: SettingsPage?): SettingsPage =
     if (!paired) SettingsPage.CONNECTION else last ?: SettingsPage.STEERING
+
+/** The Connection preview's one-line status. */
+fun connectionSummary(paired: Boolean, connected: Boolean, rttMs: Float): String = when {
+    !paired -> "Not paired"
+    !connected -> "Looking for PC…"
+    else -> "Connected · ${rttMs.toInt()} ms"
+}

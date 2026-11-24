@@ -23,7 +23,7 @@ import com.f1controller.ui.theme.Palette
 fun SettingsScreen(
     page: SettingsPage,
     onPage: (SettingsPage) -> Unit,
-    pageContent: @Composable (SettingsPage) -> Unit,
+    pageContent: @Composable RowScope.(SettingsPage) -> Unit,
 ) {
     Row(
         Modifier
